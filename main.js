@@ -50,12 +50,124 @@ function correspondingSpecialChar(char) {
 }
 
 /**
+ * Parse titles from `text[pos]`.
+ * @param {string} text The complete text passed from the user
+ * @param {Number} pos Where to begin parsing
+ * @returns {[string, Number]} An array containing the parsing result and the end position of the parsing function.
+ */
+function parseTitles(text, pos) {
+    let j = pos;
+    let headingDepth = 1;
+    let res = '';
+
+    while(text[++j] == '#') {
+        headingDepth++;
+    }
+    if(headingDepth > 6) {  //there is no <h7>
+        headingDepth = 6;
+        console.warn(`There is more than 6 \`#\` for a heading, outputting an <h6>`)
+    }
+    headingDepth = Math.min(headingDepth, 6);       
+
+    if(text[j] == ' ') {  //if not a space, the # will be handled as \#
+        pos = j;
+        let buf = '';
+        while(text[++pos] != '\n' && pos < text.length) {
+            currentChar = text[pos];
+            nextChar    = text[pos+1];
+
+            //checking for tags
+            if((nextChar == '<' || nextChar == '>') && currentChar != '\\') {     //check if a '<' or '>' is not escaped
+                throw new Error(`Unsecaped \`${nextChar}\` in heading, HTML is disabled in headings.`);
+            }
+            if(currentChar == '<') {
+                buf = buf.slice(0, -1) + specialChars['<'];
+                continue;
+            }
+            if(currentChar == '>') {
+                buf = buf.slice(0, -1) + specialChars['>'];
+                continue;
+            }
+
+            //asterix bold
+            if(currentChar == '*' && nextChar == '*') {
+                buf += correspondingStyleTag('**');
+                pos++;    //skipping the second *
+                continue;
+            }
+
+            //asterix italic
+            if(currentChar == '*') {
+                buf += correspondingStyleTag('*');
+                continue;
+            }
+                        
+            buf += correspondingSpecialChar(currentChar);
+        }
+        res += `<h${headingDepth}>${buf}</h${headingDepth}>\n`;
+    }
+    return [res, pos];
+}
+
+/**
+ * Return a string closing `howMany` blockquotes.
+ * @param {Number} howMany How many blockquotes should the function close
+ * @returns {string} 
+ */
+function closeBlockQuotes(howMany) {
+    return "</blockquotes>\n".repeat(howMany);
+}
+
+/**
+ * Parse blockquotes.
+ * @param {string} text The complete text passed from the user
+ * @param {Number} pos Where to begin parsing
+ * @param {Number} quotingDepth 
+ * @returns {[string, Number, Number]} An array containing the parsing result, the end position of the parsing function and the new quoting depth in this order.
+ */
+function parseBlockQuotes(text, pos, quotingDepth) {
+    let depth = 0;
+    let res = '';
+    while(text[pos] == '>') {
+        depth++;
+        pos++;
+    }
+    if(text[pos] != ' ') {
+        res += closeBlockQuotes(quotingDepth);
+        console.warn("Blockquotes ended because a line didn't have a space after `>` characters.");
+        
+        res += specialChars['>'].repeat(depth);
+        return [res, pos-1, 0];    //cancelling the continue's effect
+    }
+    if(depth > quotingDepth+1) {
+        throw new Error(`Can't quote at a nesting level of ${depth} when the previous line's nesting level was ${quotingDepth}.`);
+    }
+            
+    if(depth == quotingDepth+1) {
+        res += "<blockquote>";
+        quotingDepth++;
+        return [res, pos, quotingDepth];
+    }
+    if(depth < quotingDepth) {
+        res += closeBlockQuotes(quotingDepth - depth);
+        console.info(quotingDepth - depth);
+        
+        quotingDepth = depth;
+    }
+
+    res += "<br />\n";
+    return [res, pos, quotingDepth]
+}
+
+/**
  * Convert markdown to HTML
  * @param {string} text The text to convert to HTML
  */
 function markdownToHMTL(text) {
     var res = '';
     var openedTxtArea = 0;
+    var quotingDepth = 0;
+    var quoted = false;
 
     for (let i = 0; i < text.length; i++) {
         i = parseInt(i);    //I love JS
@@ -66,7 +178,8 @@ function markdownToHMTL(text) {
         if(i+1 < text.length) { nextChar = text[i+1]; }
         let currentChar = text[i];
 
-        const isFirstChar = previousChar == '\n' || i == 0;   //if currentChar is the first character of the line
+        const isFirstChar = previousChar == '\n' || i == 0 || quoted;   //if currentChar is the first character of the line
+        quoted = false;
 
         //handling escapes
         if(currentChar == '\\') {
@@ -102,56 +215,27 @@ function markdownToHMTL(text) {
             }
         }
 
+        //blockquotes
+        if(isFirstChar && currentChar == '>') {
+            let parseRes = '';
+            [parseRes, i, quotingDepth] = parseBlockQuotes(text, i, quotingDepth);
+            res += parseRes;
+
+            //quoted = true;  //setting newLine to true
+            console.log(res);
+            
+            continue;
+        }
+        if(isFirstChar && quotingDepth > 0) {
+            res += closeBlockQuotes(quotingDepth);
+            quotingDepth = 0;
+        }
+
         //titles
         if(isFirstChar && currentChar == '#') {
-            let j = i;
-            let headingDepth = 1;
-            while(text[++j] == '#') {
-                headingDepth++;
-            }
-            if(headingDepth > 6) {  //there is no <h7>
-                headingDepth = 6;
-                console.warn(`There is more than 6 \`#\` for a heading, outputting an <h6>`)
-            }
-            headingDepth = Math.min(headingDepth, 6);       
-
-            if(text[j] == ' ') {  //if not a space, the # will be handled as \#
-                i = j;
-                let buf = '';
-                while(text[++i] != '\n' && i < text.length) {
-                    currentChar = text[i];
-                    nextChar    = text[i+1];
-
-                    //checking for tags
-                    if((nextChar == '<' || nextChar == '>') && currentChar != '\\') {     //check if a '<' or '>' is not escaped
-                        throw new Error(`Unsecaped \`${nextChar}\` in heading, HTML is disabled in headings.`);
-                    }
-                    if(currentChar == '<') {
-                        buf = buf.slice(0, -1) + specialChars['<'];
-                        continue;
-                    }
-                    if(currentChar == '>') {
-                        buf = buf.slice(0, -1) + specialChars['>'];
-                        continue;
-                    }
-
-                    //asterix bold
-                    if(currentChar == '*' && nextChar == '*') {
-                        buf += correspondingStyleTag('**');
-                        i++;    //skipping the second *
-                        continue;
-                    }
-
-                    //asterix italic
-                    if(currentChar == '*') {
-                        buf += correspondingStyleTag('*');
-                        continue;
-                    }
-                        
-                    buf += correspondingSpecialChar(currentChar);
-                }
-                res += `<h${headingDepth}>${buf}</h${headingDepth}>\n`;
-            }
+            let parseRes;
+            [parseRes, i] = parseTitles(text, i);
+            res += parseRes;
             continue;
         }
 
@@ -201,5 +285,7 @@ function markdownToHMTL(text) {
             res += currentChar;            
         }
     }
+
+    res += closeBlockQuotes(quotingDepth);
     return res;
 }
