@@ -28,15 +28,33 @@
         </style>
     </head>
     <body>
+        <input type="file" id="getFile" accept=".md,.txt,.html" />
         <textarea id="input"></textarea>
         <output></output>
         <script src="main.js"></script>
         <script>
-            document.querySelector('#input').addEventListener("input",
+            const input = document.querySelector('#input');
+            input.addEventListener("input",
                 () => {
-                    const res = markdownToHMTL(document.querySelector('#input').value);
+                    const res = markdownToHMTL(input.value);
                     document.querySelector('output').innerHTML = res;
                     console.log(res);
+                }
+            );
+
+            document.querySelector('#getFile').addEventListener("change",
+                (event) => {
+                    const reader = new FileReader();
+                    reader.onerror = function() {
+                        console.error("Failed to read the file.");
+                        alert("Failed to read the file.");
+                    }
+                    reader.onload = function() {
+                        input.textContent = reader.result;
+                        input.dispatchEvent(new Event("input"));    //send event
+                    }
+
+                    reader.readAsText(document.querySelector('#getFile').files[0])
                 }
             );
         </script>

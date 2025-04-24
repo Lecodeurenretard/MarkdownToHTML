@@ -32,7 +32,7 @@ function markdownToHMTL(text) {
 
         if(i > 0) { lastChar = text[i-1]; }
         if(i+1 < text.length) { nextChar = text[i+1]; }
-        const currentChar = text[i];
+        let currentChar = text[i];
 
         const isFirstChar = lastChar == '\n' || i == 0;   //if currentChar is the first character of the line
 
@@ -85,25 +85,42 @@ function markdownToHMTL(text) {
                 i = j;
                 let buf = '';
                 while(text[++i] != '\n' && i < text.length) {
-                    if((text[i+1] == '<' || text[i+1] == '>') && text[i] != '\\') {     //check if a '<' or '>' is not escaped
-                        throw new Error(`Unsecaped \`${text[i+1]}\` in heading, HTML is disabled in headings.`);
+                    currentChar = text[i];
+                    nextChar    = text[i+1];
+                    if((nextChar == '<' || nextChar == '>') && currentChar != '\\') {     //check if a '<' or '>' is not escaped
+                        throw new Error(`Unsecaped \`${nextChar}\` in heading, HTML is disabled in headings.`);
                     }
-                    if(text[i] == '<') {
+                    if(currentChar == '<') {
                         buf = buf.slice(0, -1) + specialChars['<'];
                         continue;
                     }
-                    if(text[i] == '>') {
+                    if(currentChar == '>') {
                         buf = buf.slice(0, -1) + specialChars['>'];
                         continue;
                     }
                         
-                    buf += correspondingSpecialChar(text[i]);
+                    buf += correspondingSpecialChar(currentChar);
                 }
                 res += `<h${headingDepth}>${buf}</h${headingDepth}>\n`;
             }
             continue;
         }
 
+        //else it is text
+        let spaces = 0
+        while(text[i] == ' ' && i < text.length){
+            spaces++;
+            i++;
+        }
+
+        currentChar = text[i];
+        if(spaces > 1 && currentChar == '\n') {
+            res += "<br />\n"
+            continue;
+        }
+        //else
+        res += ' '.repeat(spaces);  //insert spaces
+        
         res += currentChar;
     }
     return res;
