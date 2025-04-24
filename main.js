@@ -1,10 +1,41 @@
-var specialChars = {
+const specialChars = {
     '<': '&lt;',
     '>': '&gt;',
     '#': '&#35;',
     '*': '&#42;',
     '_': '&#45;',
 };
+
+const styleChar = {
+    '*': "italic",
+    '**': "bold",
+};
+
+var openedStyle = {
+    "italic": false,
+    "bold": false,
+}
+
+const styleTagNames = {
+    "italic": "i",
+    "bold": "b",
+}
+
+/**
+ * The tag corresponding to `char`.
+ * @param {string} char The string representing a style, for bold it would be `'**'`. It is assumed that it is a key of `styleChar`.
+ * @returns {string} 
+ */
+function correspondingStyleTag(char) {
+    const tagName = styleTagNames[styleChar[char]];
+    if(openedStyle[styleChar[char]]) {  //if the corresponding style has been opened 
+        openedStyle[styleChar[char]] = false;
+        return "</" + tagName + ">";
+    }
+    
+    openedStyle[styleChar[char]] = true;
+    return "<" + tagName + ">";
+} 
 
 /**
  * Protected access to `specialChar`.
@@ -25,17 +56,19 @@ function correspondingSpecialChar(char) {
 function markdownToHMTL(text) {
     var res = '';
     var openedTxtArea = 0;
+
     for (let i = 0; i < text.length; i++) {
         i = parseInt(i);    //I love JS
-        let lastChar = null;
+        let previousChar = null;
         let nextChar = null;
 
-        if(i > 0) { lastChar = text[i-1]; }
+        if(i > 0) { previousChar = text[i-1]; }
         if(i+1 < text.length) { nextChar = text[i+1]; }
         let currentChar = text[i];
 
-        const isFirstChar = lastChar == '\n' || i == 0;   //if currentChar is the first character of the line
+        const isFirstChar = previousChar == '\n' || i == 0;   //if currentChar is the first character of the line
 
+        //handling escapes
         if(currentChar == '\\') {
             if(!nextChar) {
                 res += '\\';
@@ -69,6 +102,7 @@ function markdownToHMTL(text) {
             }
         }
 
+        //titles
         if(isFirstChar && currentChar == '#') {
             let j = i;
             let headingDepth = 1;
@@ -81,12 +115,14 @@ function markdownToHMTL(text) {
             }
             headingDepth = Math.min(headingDepth, 6);       
 
-            if(text[j] == ' ') {  //if not a space, it will be handled as \#
+            if(text[j] == ' ') {  //if not a space, the # will be handled as \#
                 i = j;
                 let buf = '';
                 while(text[++i] != '\n' && i < text.length) {
                     currentChar = text[i];
                     nextChar    = text[i+1];
+
+                    //checking for tags
                     if((nextChar == '<' || nextChar == '>') && currentChar != '\\') {     //check if a '<' or '>' is not escaped
                         throw new Error(`Unsecaped \`${nextChar}\` in heading, HTML is disabled in headings.`);
                     }
@@ -98,6 +134,19 @@ function markdownToHMTL(text) {
                         buf = buf.slice(0, -1) + specialChars['>'];
                         continue;
                     }
+
+                    //asterix bold
+                    if(currentChar == '*' && nextChar == '*') {
+                        buf += correspondingStyleTag('**');
+                        i++;    //skipping the second *
+                        continue;
+                    }
+
+                    //asterix italic
+                    if(currentChar == '*') {
+                        buf += correspondingStyleTag('*');
+                        continue;
+                    }
                         
                     buf += correspondingSpecialChar(currentChar);
                 }
@@ -106,22 +155,51 @@ function markdownToHMTL(text) {
             continue;
         }
 
-        //else it is text
-        let spaces = 0
-        while(text[i] == ' ' && i < text.length){
-            spaces++;
-            i++;
-        }
-
-        currentChar = text[i];
-        if(spaces > 1 && currentChar == '\n') {
-            res += "<br />\n"
+        //asterix bold
+        if(currentChar == '*' && nextChar == '*') {
+            res += correspondingStyleTag('**');
+            i++;    //skipping the second *
             continue;
         }
-        //else
-        res += ' '.repeat(spaces);  //insert spaces
+
+        //asterix italic
+        if(currentChar == '*') {
+            res += correspondingStyleTag('*');
+            continue;
+        }
+
+        //else it's regular text
+        let newLines = 0;
+        while(currentChar == '\n' && i < text.length){
+            newLines++;
+            currentChar = text[++i];
+        }
+        if(newLines > 0){
+            if(newLines > 1) {      //new paragraph
+                res += "<br />\n<br />\n";
+            }
+            i--;    //cancel the continue's effect 
+            continue;
+        }
+
+        let spaces = 0
+        while(currentChar == ' ' && i < text.length){
+            spaces++;
+            currentChar = text[++i];
+        }
+        if(spaces > 0) {
+            if(spaces > 1 && currentChar == '\n'){
+                res += "<br />\n";
+            }
+            res += ' '.repeat(spaces);  //insert spaces
+            i--;
+            continue;
+        }
         
-        res += currentChar;
+        //If not at EoF
+        if (currentChar) {
+            res += currentChar;            
+        }
     }
     return res;
 }
