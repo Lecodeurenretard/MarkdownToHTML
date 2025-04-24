@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <style>
+            :root, body {
+                width: 100vw;
+                height: 100vh;
+                padding: 0;
+                margin: 0;
+            }
+
+            #input, output {
+                display: inline-block;
+                margin: 1%;
+                width: 47%;
+                height: 97%;
+
+                position: absolute;
+                top: 1%;
+            }
+
+            #input {
+                left: 1%;
+            }
+            output {
+                right: 1%;
+            }
+        </style>
+    </head>
+    <body>
+        <textarea id="input"></textarea>
+        <output></output>
+        <script src="main.js"></script>
+        <script>
+            document.querySelector('#input').addEventListener("input",
+                () => {
+                    const res = markdownToHMTL(document.querySelector('#input').value);
+                    document.querySelector('output').innerHTML = res;
+                    console.log(res);
+                }
+            );
+        </script>
+    </body>
+</html>
