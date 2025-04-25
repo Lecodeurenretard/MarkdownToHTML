@@ -8,7 +8,8 @@
 #### **bold title**
 I am Text! 
 Same line  
-new line
+new line        
+more than two spaces
 
 I love *italic*  
 But I like **bold** better  
@@ -21,7 +22,8 @@ Quoting myself:
 > ### Title 3
 > I am Text! 
 > Same line  
-> new line
+> new line        
+> more than two spaces
 > 
 > I love *italic*  
 > But I like **bold** better  
@@ -31,10 +33,15 @@ Quoting myself:
 >> \[...\]
 >>> Quoting myself:
 >>> \[...\]
->>>> Quoting myself:
->>>> \[...\]
 >>> \[end of quote\]
 >> \[end of quote\]
 > \[end of quote\]
 
 <!--I'm an invisible comment-->
+
+1. Sometimes it's useful
+2. to order text
+2. *especially* when
+5. the computer 
+90. **do it for me**
+3. I like to not doing *anything*.
