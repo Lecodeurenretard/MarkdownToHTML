@@ -45,3 +45,18 @@ Quoting myself:
 5. the computer 
 90. **do it for me**
 3. I like to not doing *anything*.
+
+0. This is a seperate list
+    1. This is a nested ordered list
+    2. To parse it,
+    3. I use
+        4. Re
+            5. cur
+                6. sion
+                7. hopefully not infinite
+            8. other elemens can go after lists 
+            9. Even
+                10. other lists!
+    11. Nested lists
+        12. can also be closed by not putting any marker 
+like this

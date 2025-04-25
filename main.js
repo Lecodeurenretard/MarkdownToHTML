@@ -22,6 +22,28 @@ const styleTagNames = {
 }
 
 /**
+ * Count the indentation there is at `text[pos]`.
+ * @param {string} text The complete text passed from the user
+ * @param {Number} pos Where to begin parsing
+ * @param {Number} spacesInTabs=4 | How many spaces are equivalent to a tab (one of indentation).
+ * @returns {[Number, Number]} Return an array containing the indentation and the end position in `txt` 
+ */
+function countIndentation(text, pos, spacesInTabs=4) {
+    const spaceVal = 1/spacesInTabs;
+    let count = 0;
+    while(text[pos] !== undefined) {
+        if(text[pos] == '\t')
+            count++;
+        else if(text[pos] == ' ')
+            count += spaceVal;
+        else
+            break;
+        pos++;
+    }
+    return [Math.floor(count), pos];
+}
+
+/**
  * The tag corresponding to `char`.
  * @param {string} char The string representing a style, for bold it would be `'**'`. It is assumed that it is a key of `styleChar`.
  * @returns {string} 
@@ -186,9 +208,8 @@ function checkOrderedList(text, pos) {
     if(!/\d/.test(text[pos])) 
         return [false, pos];
 
-    while(/\d/.test(text[pos])) {   //skipping all nums
+    while(/\d/.test(text[pos]))   //skipping all nums
         pos++;
-    }
     return [text[pos] == '.', pos+1];
 }
 
@@ -196,10 +217,10 @@ function checkOrderedList(text, pos) {
  * Parse ordered lists.
  * @param {string} text The complete text passed from the user
  * @param {Number} pos Where to begin parsing
- * @param {Number} lastIndex=0 | The last index used for this list 
+ * @param {Number} nestlvl=0 | The nesting level of the list
  * @returns {[string, Number]} An array containing the parsing result, the end position of the parsing function.
  */
-function parseOrderedList(text, pos) {
+function parseOrderedList(text, pos, nestLvl=0) {
     let res = "<ol>\n<li>";
 
     let newIteration;
@@ -210,26 +231,54 @@ function parseOrderedList(text, pos) {
         let previousChar    = text[pos-1] ?? null;
 
         const isFirstChar = previousChar == '\n';   //pos == 0 case is handled before the loop 
-        if(isFirstChar) {
-            const [hereWeGoAgain, newPos] = checkOrderedList(text, pos);
-            pos = newPos
-           if(!hereWeGoAgain) 
-                break;
-
-           res += "</li>\n<li>";
-           continue;
-        }
 
         if(currentChar == '\\') {
             if(!nextChar) {
                 res += '\\';
                 break;
             }
-
+            
             res += correspondingSpecialChar(nextChar);
             pos++
             continue;
         }
+        
+        if(isFirstChar) {
+            //parse ordered lists
+            orderedListChecking: {
+                let nestCount;
+                [nestCount, pos] = countIndentation(text, pos);
+                
+
+                if(nestCount < nestLvl)
+                    break;
+                if(nestCount == nestLvl)
+                    break orderedListChecking;
+                if(nestCount != nestLvl +1)
+                    throw new Error(`Can't nest to level ${nestCount} when the current nesting level is ${nestLvl}.`);
+
+                const [testResult, newPos] = checkOrderedList(text, pos);
+                pos = newPos;
+                if(testResult) {
+                    let parseRes;
+                    [parseRes, pos] = parseOrderedList(text, pos, nestLvl+1);
+                    res += parseRes;
+                    continue;
+                }
+            }
+            currentChar = text[pos];
+
+            //check if this is the end of the list
+            const [hereWeGoAgain, newPos] = checkOrderedList(text, pos);
+            pos = newPos
+            if(!hereWeGoAgain) 
+                break;
+
+           res += "</li>\n<li>";
+           continue;
+        }
+
+
 
         if(currentChar == '<' || currentChar == '>')    //escaped < and > are handled above
             throw new Error("Can't insert HTML into lists, try to escape `<` and `>`.");
@@ -243,31 +292,18 @@ function parseOrderedList(text, pos) {
                 continue;
         }
 
+
         //else it's regular text
+        currentChar = text[pos];
         let newLines = 0;
         while(currentChar == '\n' && pos < text.length) {
             newLines++;
             currentChar = text[++pos];
         }
-        if(newLines > 0) {
-            if(newLines > 1) {      //new paragraph
-                res += "<br />\n<br />\n";
-            }
+        if(newLines > 0) {  //if new line, getting ready for a new marker
+            if(newLines > 1)      //new paragraph
+                break;
             pos--;    //cancel the continue's effect 
-            continue;
-        }
-
-        let spaces = 0
-        while(currentChar == ' ' && pos < text.length) {
-            spaces++;
-            currentChar = text[++pos];
-        }
-        if(spaces > 0) {
-            if(spaces > 1 && currentChar == '\n') {
-                res += "<br />\n";
-            }
-            res += ' '.repeat(spaces);  //insert spaces
-            pos--;
             continue;
         }
         
@@ -288,7 +324,6 @@ function markdownToHMTL(text) {
     var openedTxtArea = 0;
     var quotingDepth = 0;
     var quoted = false;
-    var listLastIndex = 0;
 
     for (let i = 0; i < text.length; i++) {
         i = parseInt(i);    //I love JS
@@ -362,16 +397,18 @@ function markdownToHMTL(text) {
         //lists
         {
             const [testRes, newPos] = checkOrderedList(text, i);
-            i = newPos;
             if(testRes) {
+                i = newPos;
+
                 let parseRes;
-                [parseRes, i, listLastIndex] = parseOrderedList(text, i, listLastIndex);
+                [parseRes, i, listLastIndex] = parseOrderedList(text, i);
+
                 res += parseRes;
                 continue;
             }
         }
         
-        //parse style
+        //style
         {
             let parseRes, callContinue;
             [parseRes, i, callContinue] = parseStyle(text, i);
@@ -393,7 +430,7 @@ function markdownToHMTL(text) {
             continue;
         }
 
-        let spaces = 0
+        let spaces = 0;
         while(currentChar == ' ' && i < text.length) {
             spaces++;
             currentChar = text[++i];
@@ -407,6 +444,7 @@ function markdownToHMTL(text) {
             continue;
         }
         
+        console.log(currentChar);
         //If not at EoF
         if (currentChar)
             res += currentChar;            
