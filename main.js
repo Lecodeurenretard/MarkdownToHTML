@@ -115,7 +115,7 @@ function parseTitles(text, pos) {
  * @returns {string} 
  */
 function closeBlockQuotes(howMany) {
-    return "</blockquotes>\n".repeat(howMany);
+    return "</blockquote>\n".repeat(howMany);
 }
 
 /**
@@ -179,7 +179,6 @@ function markdownToHMTL(text) {
         let currentChar = text[i];
 
         const isFirstChar = previousChar == '\n' || i == 0 || quoted;   //if currentChar is the first character of the line
-        quoted = false;
 
         //handling escapes
         if(currentChar == '\\') {
@@ -221,15 +220,17 @@ function markdownToHMTL(text) {
             [parseRes, i, quotingDepth] = parseBlockQuotes(text, i, quotingDepth);
             res += parseRes;
 
-            //quoted = true;  //setting newLine to true
+            quoted = true;  //setting newLine to true
             console.log(res);
             
             continue;
         }
-        if(isFirstChar && quotingDepth > 0) {
+        if(isFirstChar && !quoted && quotingDepth > 0) {   //=> currentChar != '>'
             res += closeBlockQuotes(quotingDepth);
             quotingDepth = 0;
+            console.warn("Setting blockquotes to 0");
         }
+        quoted = false;
 
         //titles
         if(isFirstChar && currentChar == '#') {
