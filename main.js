@@ -251,7 +251,6 @@ function parseOrderedList(text, pos, nestLvl=0) {
 			let nestCount;
 			[nestCount, pos] = countIndentation(text, pos);
 			currentChar = text[pos];
-			//console.log(`${text[pos-1]}${text[pos]}${text[pos+1]}, ${nestCount} VS ${nestLvl}`);
 			
 
 			if(nestCount < nestLvl)
@@ -270,7 +269,7 @@ function parseOrderedList(text, pos, nestLvl=0) {
 			if(nestCount != nestLvl +1)
 				throw new Error(`Can't nest ordered list to level ${nestCount} when the current nesting level is ${nestLvl}.`);
 
-			const [testResult, newPos] = checkOrderedList(text, pos);
+			const testResult = checkOrderedList(text, pos)[0];
 
 			if(!testResult) 
 				throw new Error("Unexpected indenation in ordered list.");
@@ -323,6 +322,7 @@ function parseOrderedList(text, pos, nestLvl=0) {
 		if (currentChar)
 			res += currentChar;			
 	}
+
 	res += "</li></ol>";
 	return [res, pos-1];	//prevent skipping the next character
 }
