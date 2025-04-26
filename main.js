@@ -67,9 +67,8 @@ function correspondingStyleTag(char) {
  * @returns {string} `specialChars[char]` if `char` is in `specialChars` else `char`.
  */
 function correspondingSpecialChar(char) {
-	if(char in specialChars) {
+	if(char in specialChars)
 		return specialChars[char];
-	}
 	return char;
 }
 
@@ -80,11 +79,11 @@ function correspondingSpecialChar(char) {
  * @returns {[string, Number]} An array containing the parsing result and the end position of the parsing function.
  */
 function parseTitles(text, pos) {
-	let j = pos;
+	let posCopy = pos;
 	let headingDepth = 1;
 	let res = '';
 
-	while(text[++j] == '#')
+	while(text[++posCopy] == '#')
 		headingDepth++;
 
 	if(headingDepth > 6) {	//there is no <h7>
@@ -94,8 +93,8 @@ function parseTitles(text, pos) {
 	headingDepth = Math.min(headingDepth, 6);		
 
 	res += `<h${headingDepth}>`;
-	if(text[j] == ' ') {	//if not a space, the # will be handled as \#
-		pos = j;
+	if(text[posCopy] == ' ') {	//if not a space, the # will be handled as \#
+		pos = posCopy;
 		while(text[++pos] != '\n' && pos < text.length) {
 			currentChar = text[pos];
 			nextChar	= text[pos+1];
@@ -127,7 +126,7 @@ function parseTitles(text, pos) {
 				res += correspondingStyleTag('*');
 				continue;
 			}
-						
+
 			res += correspondingSpecialChar(currentChar);
 		}
 		res += `</h${headingDepth}>\n`;
@@ -226,16 +225,61 @@ function checkOrderedList(text, pos) {
  * @returns {[string, Number]} An array containing the parsing result, the end position of the parsing function.
  */
 function parseOrderedList(text, pos, nestLvl=0) {
-	let res = "<ol>\n<li>";
+	{
+		let posCopy = pos;
+		
+		//NOT checking indentation, the expected `text[pos]` is expected to be the marker
 
-	let newIteration;
-	[newIteration, pos] = checkOrderedList(text, pos);
+		let isMarker;
+		[isMarker, posCopy] = checkOrderedList(text, posCopy);
+		if(!isMarker)
+			return ['', pos];
+
+
+		pos = posCopy;
+	}
+
+	let res = "<ol>\n<li>";
 	for(; text[pos] !== undefined; pos++) {
 		let currentChar		= text[pos];
 		let nextChar		= text[pos+1] ?? null;
 		let previousChar	= text[pos-1] ?? null;
 
-		const isFirstChar = previousChar == '\n';	//pos == 0 case is handled before the loop 
+		const isFirstChar = previousChar == '\n'; 
+		if(isFirstChar) {
+			//parse ordered lists
+			let nestCount;
+			[nestCount, pos] = countIndentation(text, pos);
+			currentChar = text[pos];
+			//console.log(`${text[pos-1]}${text[pos]}${text[pos+1]}, ${nestCount} VS ${nestLvl}`);
+			
+
+			if(nestCount < nestLvl)
+				break;
+			if(nestCount == nestLvl) {
+				//checking if this is the end of the list
+				const [hereWeGoAgain, newPos] = checkOrderedList(text, pos);
+				if(!hereWeGoAgain) 
+					break;
+
+
+				pos = newPos;
+				res += "</li>\n<li>";
+				continue;
+			}
+			if(nestCount != nestLvl +1)
+				throw new Error(`Can't nest ordered list to level ${nestCount} when the current nesting level is ${nestLvl}.`);
+
+			const [testResult, newPos] = checkOrderedList(text, pos);
+
+			if(!testResult) 
+				throw new Error("Unexpected indenation in ordered list.");
+
+			let parseRes;
+			[parseRes, pos] = parseOrderedList(text, pos, nestLvl+1);
+			res += parseRes;
+			continue;
+		}
 
 		if(currentChar == '\\') {
 			if(!nextChar) {
@@ -244,47 +288,9 @@ function parseOrderedList(text, pos, nestLvl=0) {
 			}
 			
 			res += correspondingSpecialChar(nextChar);
-			pos++
+			pos++;
 			continue;
 		}
-		
-		if(isFirstChar) {
-			//parse ordered lists
-			orderedListChecking: {
-				let nestCount;
-				[nestCount, pos] = countIndentation(text, pos);
-				
-
-				if(nestCount < nestLvl)
-					break;
-				if(nestCount == nestLvl)
-					break orderedListChecking;
-				if(nestCount != nestLvl +1)
-					throw new Error(`Can't nest to level ${nestCount} when the current nesting level is ${nestLvl}.`);
-
-				//console.log("jojo " + nestCount.toString());
-				const [testResult, newPos] = checkOrderedList(text, pos);
-				pos = newPos;
-				if(testResult) {
-					let parseRes;
-					[parseRes, pos] = parseOrderedList(text, pos, nestLvl+1);
-					res += parseRes;
-					continue;
-				}
-			}
-			currentChar = text[pos];
-
-			//check if this is the end of the list
-			const [hereWeGoAgain, newPos] = checkOrderedList(text, pos);
-			pos = newPos
-			if(!hereWeGoAgain) 
-				break;
-
-			res += "</li>\n<li>";
-			continue;
-		}
-
-
 
 		if(currentChar == '<' || currentChar == '>')	//escaped < and > are handled above
 			throw new Error("Can't insert HTML into lists, try to escape `<` and `>`.");
@@ -318,7 +324,7 @@ function parseOrderedList(text, pos, nestLvl=0) {
 			res += currentChar;			
 	}
 	res += "</li></ol>";
-	return [res, pos]
+	return [res, pos-1];	//prevent skipping the next character
 }
 
 /**
@@ -333,12 +339,10 @@ function markdownToHMTL(text) {
 
 	for (let i = 0; i < text.length; i++) {
 		i = parseInt(i);	//I love JS
-		let previousChar = null;
-		let nextChar = null;
 
-		if(i > 0) { previousChar = text[i-1]; }
-		if(i+1 < text.length) { nextChar = text[i+1]; }
-		let currentChar = text[i];
+		let previousChar = text[i-1] ?? null; 
+		let nextChar	 = text[i+1] ?? null; 
+		let currentChar	 = text[i];
 
 		const isFirstChar = previousChar == '\n' || i == 0 || quoted;	//if currentChar is the first character of the line
 
@@ -360,7 +364,7 @@ function markdownToHMTL(text) {
 			[parseRes, i, quotingDepth] = parseBlockQuotes(text, i, quotingDepth);
 			res += parseRes;
 		
-			quoted = true;	//setting newLine to true
+			quoted = true;	//The next character will be considered as the first
 			continue;
 		}
 		if(isFirstChar && !quoted && quotingDepth > 0) {	//=> currentChar != '>'
@@ -404,8 +408,6 @@ function markdownToHMTL(text) {
 		{
 			const [testRes, newPos] = checkOrderedList(text, i);
 			if(testRes) {
-				i = newPos;
-
 				let parseRes;
 				[parseRes, i, listLastIndex] = parseOrderedList(text, i);
 
@@ -429,6 +431,7 @@ function markdownToHMTL(text) {
 			newLines++;
 			currentChar = text[++i];
 		}
+		
 		if(newLines > 0) {
 			if(newLines > 1)		//new paragraph
 				res += "<br />\n<br />\n";

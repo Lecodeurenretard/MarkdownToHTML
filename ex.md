@@ -54,7 +54,7 @@ Quoting myself:
             5. cur
                 6. sion
                 7. hopefully not infinite
-            8. other elemens can go after lists 
+            8. other elements can go after lists 
             9. Even
                 10. other lists!
     11. Nested lists

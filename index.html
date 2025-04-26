@@ -41,6 +41,7 @@
 					console.log(res);
 				}
 			);
+			input.dispatchEvent(new Event("input"));	//process the text already in the textarea
 
 			document.querySelector('#getFile').addEventListener("change",
 				(event) => {
