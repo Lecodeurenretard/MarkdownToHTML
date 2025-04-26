@@ -29,16 +29,18 @@ const styleTagNames = {
  * @returns {[Number, Number]} Return an array containing the indentation and the end position in `txt` 
  */
 function countIndentation(text, pos, spacesInTabs=4) {
-	const spaceVal = 1/spacesInTabs;
+	const spaceVal = 1/spacesInTabs;	//If a tab is 4 spaces, a spaces is 1/4 tab,  if a tab is 8 spaces, a spaces is 1/8 tab, ...
 	let count = 0;
-	while(text[pos] !== undefined) {
-		if(text[pos] == '\t')
+	for(; text[pos] !== undefined; pos++) {
+		if(text[pos] == '\t') {
 			count++;
-		else if(text[pos] == ' ')
+			continue;
+		}
+		if(text[pos] == ' ') {
 			count += spaceVal;
-		else
-			break;
-		pos++;
+			continue;
+		}
+		break;
 	}
 	return [Math.floor(count), pos];
 }
@@ -50,7 +52,7 @@ function countIndentation(text, pos, spacesInTabs=4) {
  */
 function correspondingStyleTag(char) {
 	const tagName = styleTagNames[styleChar[char]];
-	if(openedStyle[styleChar[char]]) {  //if the corresponding style has been opened 
+	if(openedStyle[styleChar[char]]) {	//if the corresponding style has been opened 
 		openedStyle[styleChar[char]] = false;
 		return "</" + tagName + ">";
 	}
@@ -82,51 +84,53 @@ function parseTitles(text, pos) {
 	let headingDepth = 1;
 	let res = '';
 
-	while(text[++j] == '#') {
+	while(text[++j] == '#')
 		headingDepth++;
-	}
-	if(headingDepth > 6) {  //there is no <h7>
+
+	if(headingDepth > 6) {	//there is no <h7>
 		headingDepth = 6;
 		console.warn(`There is more than 6 \`#\` for a heading, outputting an <h6>`)
 	}
-	headingDepth = Math.min(headingDepth, 6);	   
+	headingDepth = Math.min(headingDepth, 6);		
 
-	if(text[j] == ' ') {  //if not a space, the # will be handled as \#
+	res += `<h${headingDepth}>`;
+	if(text[j] == ' ') {	//if not a space, the # will be handled as \#
 		pos = j;
-		let buf = '';
 		while(text[++pos] != '\n' && pos < text.length) {
 			currentChar = text[pos];
 			nextChar	= text[pos+1];
 
 			//checking for tags
-			if((nextChar == '<' || nextChar == '>') && currentChar != '\\') {	 //check if a '<' or '>' is not escaped
-				throw new Error(`Unsecaped \`${nextChar}\` in heading, HTML is disabled in headings.`);
-			}
-			if(currentChar == '<') {
-				buf = buf.slice(0, -1) + specialChars['<'];
-				continue;
-			}
-			if(currentChar == '>') {
-				buf = buf.slice(0, -1) + specialChars['>'];
+			if(nextChar == '<' || nextChar == '>') {
+				if(currentChar != '\\')		//check if a '<' or '>' is not escaped
+					throw new Error(`Unsecaped \`${nextChar}\` in heading, HTML is disabled in headings.`);
+
+				currentChar = text[++pos];
+				if(currentChar == '<') {
+					res += specialChars['<'];
+					continue;
+				}
+				//else currentChar == '>'
+				res += specialChars['>'];
 				continue;
 			}
 
 			//asterix bold
 			if(currentChar == '*' && nextChar == '*') {
-				buf += correspondingStyleTag('**');
+				res += correspondingStyleTag('**');
 				pos++;	//skipping the second *
 				continue;
 			}
 
 			//asterix italic
 			if(currentChar == '*') {
-				buf += correspondingStyleTag('*');
+				res += correspondingStyleTag('*');
 				continue;
 			}
 						
-			buf += correspondingSpecialChar(currentChar);
+			res += correspondingSpecialChar(currentChar);
 		}
-		res += `<h${headingDepth}>${buf}</h${headingDepth}>\n`;
+		res += `</h${headingDepth}>\n`;
 	}
 	return [res, pos];
 }
@@ -190,12 +194,13 @@ function parseBlockQuotes(text, pos, quotingDepth) {
 function parseStyle(text, pos) {
 	//asterix bold
 	if(text[pos] == '*' && text[pos+1] == '*') 
-		return [correspondingStyleTag('**'), pos+1, true];	  //skipping the second *
+		return [correspondingStyleTag('**'), pos+1, true];		//skipping the second *
 
 	//asterix italic
 	if(text[pos] == '*') 
 		return [correspondingStyleTag('*'), pos, true];
-	return ['', pos, false];
+
+	return ['', pos, false];	//no style
 }
 
 /**
@@ -208,7 +213,7 @@ function checkOrderedList(text, pos) {
 	if(!/\d/.test(text[pos])) 
 		return [false, pos];
 
-	while(/\d/.test(text[pos]))   //skipping all nums
+	while(/\d/.test(text[pos]))		//skipping all nums
 		pos++;
 	return [text[pos] == '.', pos+1];
 }
@@ -226,11 +231,11 @@ function parseOrderedList(text, pos, nestLvl=0) {
 	let newIteration;
 	[newIteration, pos] = checkOrderedList(text, pos);
 	for(; text[pos] !== undefined; pos++) {
-		let currentChar	 = text[pos];
+		let currentChar		= text[pos];
 		let nextChar		= text[pos+1] ?? null;
 		let previousChar	= text[pos-1] ?? null;
 
-		const isFirstChar = previousChar == '\n';   //pos == 0 case is handled before the loop 
+		const isFirstChar = previousChar == '\n';	//pos == 0 case is handled before the loop 
 
 		if(currentChar == '\\') {
 			if(!nextChar) {
@@ -257,6 +262,7 @@ function parseOrderedList(text, pos, nestLvl=0) {
 				if(nestCount != nestLvl +1)
 					throw new Error(`Can't nest to level ${nestCount} when the current nesting level is ${nestLvl}.`);
 
+				//console.log("jojo " + nestCount.toString());
 				const [testResult, newPos] = checkOrderedList(text, pos);
 				pos = newPos;
 				if(testResult) {
@@ -274,8 +280,8 @@ function parseOrderedList(text, pos, nestLvl=0) {
 			if(!hereWeGoAgain) 
 				break;
 
-		   res += "</li>\n<li>";
-		   continue;
+			res += "</li>\n<li>";
+			continue;
 		}
 
 
@@ -300,8 +306,8 @@ function parseOrderedList(text, pos, nestLvl=0) {
 			newLines++;
 			currentChar = text[++pos];
 		}
-		if(newLines > 0) {  //if new line, getting ready for a new marker
-			if(newLines > 1)	  //new paragraph
+		if(newLines > 0) {	//if new line, getting ready for a new marker
+			if(newLines > 1)		//new paragraph
 				break;
 			pos--;	//cancel the continue's effect 
 			continue;
@@ -334,7 +340,7 @@ function markdownToHMTL(text) {
 		if(i+1 < text.length) { nextChar = text[i+1]; }
 		let currentChar = text[i];
 
-		const isFirstChar = previousChar == '\n' || i == 0 || quoted;   //if currentChar is the first character of the line
+		const isFirstChar = previousChar == '\n' || i == 0 || quoted;	//if currentChar is the first character of the line
 
 		//handling escapes
 		if(currentChar == '\\') {
@@ -354,10 +360,10 @@ function markdownToHMTL(text) {
 			[parseRes, i, quotingDepth] = parseBlockQuotes(text, i, quotingDepth);
 			res += parseRes;
 		
-			quoted = true;  //setting newLine to true
+			quoted = true;	//setting newLine to true
 			continue;
 		}
-		if(isFirstChar && !quoted && quotingDepth > 0) {   //=> currentChar != '>'
+		if(isFirstChar && !quoted && quotingDepth > 0) {	//=> currentChar != '>'
 			res += closeBlockQuotes(quotingDepth);
 			quotingDepth = 0;
 			console.info("Setting blockquote nesting level to 0");
@@ -424,7 +430,7 @@ function markdownToHMTL(text) {
 			currentChar = text[++i];
 		}
 		if(newLines > 0) {
-			if(newLines > 1)	  //new paragraph
+			if(newLines > 1)		//new paragraph
 				res += "<br />\n<br />\n";
 			i--;	//cancel the continue's effect 
 			continue;
@@ -439,12 +445,11 @@ function markdownToHMTL(text) {
 			if(spaces > 1 && currentChar == '\n')
 				res += "<br />\n";
 
-			res += ' '.repeat(spaces);  //insert spaces
+			res += ' '.repeat(spaces);	//insert spaces
 			i--;
 			continue;
 		}
 		
-		console.log(currentChar);
 		//If not at EoF
 		if (currentChar)
 			res += currentChar;			
