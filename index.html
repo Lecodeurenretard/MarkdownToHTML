@@ -1,62 +1,62 @@
 <!DOCTYPE html>
 <html>
-    <head>
-        <style>
-            :root, body {
-                width: 100vw;
-                height: 100vh;
-                padding: 0;
-                margin: 0;
-            }
+	<head>
+		<style>
+			:root, body {
+				width: 100vw;
+				height: 100vh;
+				padding: 0;
+				margin: 0;
+			}
 
-            #input, output {
-                display: inline-block;
-                margin: 1%;
-                width: 47%;
-                height: 97%;
+			#input, output {
+				display: inline-block;
+				margin: 1%;
+				width: 47%;
+				height: 97%;
 
-                position: absolute;
-                top: 1%;
-            }
+				position: absolute;
+				top: 1%;
+			}
 
-            #input {
-                left: 1%;
-            }
-            output {
-                right: 1%;
-            }
-        </style>
-    </head>
-    <body>
-        <input type="file" id="getFile" accept=".md,.txt,.html" />
-        <textarea id="input"></textarea>
-        <output></output>
-        <script src="main.js"></script>
-        <script>
-            const input = document.querySelector('#input');
-            input.addEventListener("input",
-                () => {
-                    const res = markdownToHMTL(input.value);
-                    document.querySelector('output').innerHTML = res;
-                    console.log(res);
-                }
-            );
+			#input {
+				left: 1%;
+			}
+			output {
+				right: 1%;
+			}
+		</style>
+	</head>
+	<body>
+		<input type="file" id="getFile" accept=".md,.txt,.html" />
+		<textarea id="input"></textarea>
+		<output></output>
+		<script src="main.js"></script>
+		<script>
+			const input = document.querySelector('#input');
+			input.addEventListener("input",
+				() => {
+					const res = markdownToHMTL(input.value);
+					document.querySelector('output').innerHTML = res;
+					console.log(res);
+				}
+			);
 
-            document.querySelector('#getFile').addEventListener("change",
-                (event) => {
-                    const reader = new FileReader();
-                    reader.onerror = function() {
-                        console.error("Failed to read the file.");
-                        alert("Failed to read the file.");
-                    }
-                    reader.onload = function() {
-                        input.textContent = reader.result;
-                        input.dispatchEvent(new Event("input"));    //send event
-                    }
+			document.querySelector('#getFile').addEventListener("change",
+				(event) => {
+					const reader = new FileReader();
+					reader.onerror = function() {
+						console.error("Failed to read the file.");
+						alert("Failed to read the file.");
+					}
+					reader.onload = function() {
+						input.textContent = reader.result;
+						input.dispatchEvent(new Event("input"));	//send event
+					}
 
-                    reader.readAsText(document.querySelector('#getFile').files[0])
-                }
-            );
-        </script>
-    </body>
+					reader.readAsText(document.querySelector('#getFile').files[0])
+				}
+			);
+		</script>
+	</body>
 </html>
