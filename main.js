@@ -73,6 +73,51 @@ function correspondingSpecialChar(char) {
 }
 
 /**
+ * Parse text from `text[pos]`.
+ * @param {string} text The complete text passed from the user
+ * @param {Number} pos Where to begin parsing
+ * @returns {[string, Number, boolean]} An array containing the parsing result, the end position of the parsing function and if the function found a new paragraph.
+ */
+function parseRegularText(text, pos) {
+	let res = '';
+	let currentChar = text[pos];
+
+	let spaces = 0;
+	while(currentChar == ' ' && pos < text.length) {
+		spaces++;
+		currentChar = text[++pos];
+	}
+	
+	if(spaces > 1 && currentChar == '\n'){
+		res += "<br />\n";
+		return [res, pos, false];
+	}
+	if(spaces > 0) {
+		res += ' '.repeat(spaces);	//insert spaces
+		pos--;
+		return [res, pos, false];
+	}
+
+	let newLines = 0;
+	while(currentChar == '\n' && pos < text.length) {
+		newLines++;
+		currentChar = text[++pos];
+	}
+	if(newLines > 0) {	//if new line, getting ready for a new marker
+		pos--;	//cancel the continue's effect 
+		if(newLines > 1)		//new paragraph
+			return [res, pos, true];
+
+		return [res, pos, false];
+	}
+
+	//If not at EoF
+	if (currentChar)
+		res += currentChar;
+	return [res, pos, false];
+}
+
+/**
  * Parse titles from `text[pos]`.
  * @param {string} text The complete text passed from the user
  * @param {Number} pos Where to begin parsing
@@ -157,24 +202,24 @@ function parseBlockQuotes(text, pos, quotingDepth) {
 		depth++;
 		pos++;
 	}
-	if(text[pos] != ' ') {
+
+	if(depth == 0 || text[pos] != ' ') {
 		res += closeBlockQuotes(quotingDepth);
 		console.warn("Blockquotes ended because a line didn't have a space after `>` characters.");
 		
 		res += specialChars['>'].repeat(depth);
 		return [res, pos-1, 0];	//cancelling the continue's effect
 	}
-	if(depth > quotingDepth+1) {
+	if(depth > quotingDepth+1)
 		throw new Error(`Can't quote at a nesting level of ${depth} when the previous line's nesting level was ${quotingDepth}.`);
-	}
-			
+
 	if(depth == quotingDepth+1) {
 		res += "<blockquote>";
 		quotingDepth++;
 		return [res, pos, quotingDepth];
 	}
 	if(depth < quotingDepth) {
-		res += closeBlockQuotes(quotingDepth - depth);		
+		res += closeBlockQuotes(quotingDepth - depth);
 		quotingDepth = depth;
 	}
 
@@ -224,17 +269,15 @@ function checkOrderedList(text, pos) {
  * @param {Number} nestlvl=0 | The nesting level of the list
  * @returns {[string, Number]} An array containing the parsing result, the end position of the parsing function.
  */
-function parseOrderedList(text, pos, nestLvl=0) {
+function parseOrderedList(text, pos, nestLvl=0, quoteNestLvl=0) {
 	{
 		let posCopy = pos;
-		
 		//NOT checking indentation, the expected `text[pos]` is expected to be the marker
 
 		let isMarker;
 		[isMarker, posCopy] = checkOrderedList(text, posCopy);
 		if(!isMarker)
 			return ['', pos];
-
 
 		pos = posCopy;
 	}
@@ -247,11 +290,21 @@ function parseOrderedList(text, pos, nestLvl=0) {
 
 		const isFirstChar = previousChar == '\n'; 
 		if(isFirstChar) {
+			//check for quoting blocks
+			if(currentChar == '>') {
+				let parseRes, quoteNest;
+				[parseRes, pos, quoteNest] = parseBlockQuotes(text, pos, quoteNestLvl);
+				if(quoteNest < quoteNestLvl)
+					throw new Error("Quoting level inferior compared to the one at the start of the list.");
+
+				res += parseRes;
+			}
+			else if(quoteNestLvl > 0)
+				throw new Error("Began the list with a quoting block but found a line without `>`.");
+
 			//parse ordered lists
 			let nestCount, newPos;
 			[nestCount, newPos] = countIndentation(text, pos);
-			currentChar = text[newPos];
-			
 
 			if(nestCount < nestLvl)
 				break;
@@ -272,17 +325,16 @@ function parseOrderedList(text, pos, nestLvl=0) {
 				throw new Error(`Can't nest ordered list to level ${nestCount} when the current nesting level is ${nestLvl}.`);
 
 			const testResult = checkOrderedList(text, pos)[0];
-
 			if(!testResult) 
 				throw new Error("Unexpected indentation in ordered list.");
 
 			let parseRes;
-			[parseRes, pos] = parseOrderedList(text, pos, nestLvl+1);
+			[parseRes, pos] = parseOrderedList(text, pos, nestLvl+1, quoteNestLvl);
 			res += parseRes;
-			console.log(text[pos+1]);
 			continue;
 		}
 
+		currentChar = text[pos];
 		if(currentChar == '\\') {
 			if(!nextChar) {
 				res += '\\';
@@ -308,25 +360,15 @@ function parseOrderedList(text, pos, nestLvl=0) {
 
 
 		//else it's regular text
-		currentChar = text[pos];
-		let newLines = 0;
-		while(currentChar == '\n' && pos < text.length) {
-			newLines++;
-			currentChar = text[++pos];
-		}
-		if(newLines > 0) {	//if new line, getting ready for a new marker
-			if(newLines > 1)		//new paragraph
-				break;
-			pos--;	//cancel the continue's effect 
-			continue;
-		}
-		
-		//If not at EoF
-		if (currentChar)
-			res += currentChar;			
+		let parseRes, endList;
+		[parseRes, i, endList] = parseRegularText(text, pos);
+
+		res += parseRes;
+		if(endList)
+			break;
 	}
 
-	res += "</li></ol>";
+	res += "</li></ol>\n";
 	return [res, pos-1];	//prevent skipping the next character
 }
 
@@ -407,12 +449,12 @@ function markdownToHMTL(text) {
 			continue;
 		}
 
-		//lists
-		{
-			const [testRes, newPos] = checkOrderedList(text, i);
+		//ordered lists
+		if(isFirstChar) {
+			const testRes = checkOrderedList(text, i)[0];
 			if(testRes) {
 				let parseRes;
-				[parseRes, i, listLastIndex] = parseOrderedList(text, i);
+				[parseRes, i, listLastIndex] = parseOrderedList(text, i, 0, quotingDepth);
 
 				res += parseRes;
 				continue;
@@ -429,37 +471,12 @@ function markdownToHMTL(text) {
 		}	
 
 		//else it's regular text
-		let newLines = 0;
-		while(currentChar == '\n' && i < text.length) {
-			newLines++;
-			currentChar = text[++i];
-		}
+		let parseRes, newParagraph;
+		[parseRes, i, newParagraph] = parseRegularText(text, i);
 		
-		if(newLines > 0) {
-			if(newLines > 1)		//new paragraph
-				res += "<br />\n<br />\n";
-			i--;	//cancel the continue's effect 
-			continue;
-		}
-
-		let spaces = 0;
-		while(currentChar == ' ' && i < text.length) {
-			spaces++;
-			currentChar = text[++i];
-		}
-		if(spaces > 0) {
-			if(spaces > 1 && currentChar == '\n')
-				res += "<br />\n";
-
-			res += ' '.repeat(spaces);	//insert spaces
-			i--;
-			continue;
-		}
-		
-		//If not at EoF
-		if (currentChar)
-			res += currentChar;			
-		
+		res += parseRes;
+		if(newParagraph)
+			res += "<br />\n<br />"
 	}
 
 	res += closeBlockQuotes(quotingDepth);
