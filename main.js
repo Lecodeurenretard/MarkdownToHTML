@@ -248,13 +248,15 @@ function parseOrderedList(text, pos, nestLvl=0) {
 		const isFirstChar = previousChar == '\n'; 
 		if(isFirstChar) {
 			//parse ordered lists
-			let nestCount;
-			[nestCount, pos] = countIndentation(text, pos);
-			currentChar = text[pos];
+			let nestCount, newPos;
+			[nestCount, newPos] = countIndentation(text, pos);
+			currentChar = text[newPos];
 			
 
 			if(nestCount < nestLvl)
 				break;
+
+			pos = newPos;
 			if(nestCount == nestLvl) {
 				//checking if this is the end of the list
 				const [hereWeGoAgain, newPos] = checkOrderedList(text, pos);
@@ -272,11 +274,12 @@ function parseOrderedList(text, pos, nestLvl=0) {
 			const testResult = checkOrderedList(text, pos)[0];
 
 			if(!testResult) 
-				throw new Error("Unexpected indenation in ordered list.");
+				throw new Error("Unexpected indentation in ordered list.");
 
 			let parseRes;
 			[parseRes, pos] = parseOrderedList(text, pos, nestLvl+1);
 			res += parseRes;
+			console.log(text[pos+1]);
 			continue;
 		}
 

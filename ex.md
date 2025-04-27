@@ -58,5 +58,6 @@ Quoting myself:
             9. Even
                 10. other lists!
     11. Nested lists
-        12. can also be closed by not putting any marker 
+	    12. can be indented with both spaces and tabs
+        13. can also be closed by not putting any marker 
 like this
