@@ -1,484 +1,504 @@
-const specialChars = {
-	'<': '&lt;',
-	'>': '&gt;',
-	'#': '&#35;',
-	'*': '&#42;',
-	'_': '&#45;',
-};
+class MarkdownParser {
+	/**
+	 * The parsing result;
+	 * @type {string}
+	 */
+	#result = '';
 
-const styleChar = {
-	'*': "italic",
-	'**': "bold",
-};
+	/**
+	 * An iterator of `toParse`.
+	 * @type {Number}
+	 */
+	#position = 0;
 
-var openedStyle = {
-	"italic": false,
-	"bold": false,
-}
+	/**
+	 * The text to parse.
+	 * @type {string}
+	 */
+	#toParse = '';
 
-const styleTagNames = {
-	"italic": "i",
-	"bold": "b",
-}
+	/**
+	 * The character at position `#position` in `#toParse`.
+	 * @type {string}
+	 */
+	#currentChar = '';
 
-/**
- * Count the indentation there is at `text[pos]`.
- * @param {string} text The complete text passed from the user
- * @param {Number} pos Where to begin parsing
- * @param {Number} spacesInTabs=4 | How many spaces are equivalent to a tab (one of indentation).
- * @returns {[Number, Number]} Return an array containing the indentation and the end position in `txt` 
- */
-function countIndentation(text, pos, spacesInTabs=4) {
-	const spaceVal = 1/spacesInTabs;	//If a tab is 4 spaces, a spaces is 1/4 tab,  if a tab is 8 spaces, a spaces is 1/8 tab, ...
-	let count = 0;
-	for(; text[pos] !== undefined; pos++) {
-		if(text[pos] == '\t') {
-			count++;
-			continue;
+	/**
+	 * The character at position `#position+1` in `#toParse`.
+	 * @type {string}
+	 */
+	#nextChar = '';
+
+	/**
+	 * The character at position `#position-1` in `#toParse`.
+	 * @type {string}
+	 */
+	#previousChar = '';
+
+	constructor() {}
+
+	static #specialChars = {
+		'<': '&lt;',
+		'>': '&gt;',
+		'#': '&#35;',
+		'*': '&#42;',
+		'_': '&#45;',
+	};
+
+	static #styleChar = {
+		'*': "italic",
+		'**': "bold",
+	};
+
+	#openedStyle = {
+		"italic": false,
+		"bold": false,
+	}
+
+	static #styleTagNames = {
+		"italic": "i",
+		"bold": "b",
+	}
+
+	/**
+	 * Check if `#position` is out of bounds for `#toParse`.
+	 * @returns {boolean}
+	 */
+	isAtEndOfText(/*void*/) {
+		return this.#toParse[this.#position] === undefined;
+	}
+
+	/**
+	 * Update `#previousChar`, `#currentChar` and `#nextChar`.
+	 */
+	#updateChars(/*void*/) {
+		this.#previousChar	= this.#toParse[this.#position-1];
+		this.#currentChar	= this.#toParse[this.#position];
+		this.#nextChar		= this.#toParse[this.#position+1];
+	}
+
+	/**
+	 * Move `howMuch` chars in `#toParse`, call `#updateChars()`.
+	 * @param {Number} howMuch A positive integer.
+	 * @returns {string} The new `#currentChar`.
+	 */
+	#skip(howMuch=1) {
+		if(howMuch < 0)
+			throw new RangeError("Parameter `howMuch` negative.");
+		this.#position += howMuch;
+		this.#updateChars();
+		return this.#currentChar;
+	}
+
+	/**
+	 * Shift the iterator to `index`.
+	 * @param {Number} index The index to go to.
+	 * @returns {string} `#currentChar`.
+	 */
+	#skipTo(index) {
+		if(index < this.#position)
+			throw new RangeError("`index` is before the iterator in `skipTo("+ index.toString() +")`.");
+		return this.#skip(index - this.#position);
+	}
+
+	/**
+	 * Move back the iterator 1 letter. This method should only be used to cancel a `continue`'s effect.
+	 */
+	#goBack(/*void*/) {
+		this.#position--;
+		this.#updateChars();
+	}
+
+	/**
+	 * Count the indentation there is from the iterator location. Change `#position`.
+	 * @param {Number} spacesInTabs=4 | How many spaces are equivalent to a tab (one of indentation).
+	 * @returns {Number} Return the indentation level.
+	 */
+	#countIndentation(spacesInTabs=4) {
+		const spaceVal = 1/spacesInTabs;	//If a tab is 4 spaces, a spaces is 1/4 tab,  if a tab is 8 spaces, a spaces is 1/8 tab, ...
+		let count = 0;
+		for(; !this.isAtEndOfText(); this.#skip()) {
+			if(this.#currentChar == '\t') {
+				count++;
+				continue;
+			}
+			if(this.#currentChar == ' ') {
+				count += spaceVal;
+				continue;
+			}
+			break;
 		}
-		if(text[pos] == ' ') {
-			count += spaceVal;
-			continue;
+		return Math.floor(count);
+	}
+
+	/**
+	 * The tag corresponding to `char`.
+	 * @param {string} char The string representing a style, for bold it would be `'**'`. It is assumed that it is a key of `#styleChar`.
+	 * @returns {string} 
+	 */
+	correspondingStyleTag(char) {
+		const tagName = MarkdownParser.#styleTagNames[MarkdownParser.#styleChar[char]];
+		if(this.#openedStyle[MarkdownParser.#styleChar[char]]) {	//if the corresponding style has been opened 
+			this.#openedStyle[MarkdownParser.#styleChar[char]] = false;	//set it to closed
+			return "</" + tagName + ">";
 		}
-		break;
-	}
-	return [Math.floor(count), pos];
-}
+		
+		this.#openedStyle[MarkdownParser.#styleChar[char]] = true;
+		return "<" + tagName + ">";
+	} 
 
-/**
- * The tag corresponding to `char`.
- * @param {string} char The string representing a style, for bold it would be `'**'`. It is assumed that it is a key of `styleChar`.
- * @returns {string} 
- */
-function correspondingStyleTag(char) {
-	const tagName = styleTagNames[styleChar[char]];
-	if(openedStyle[styleChar[char]]) {	//if the corresponding style has been opened 
-		openedStyle[styleChar[char]] = false;
-		return "</" + tagName + ">";
-	}
-	
-	openedStyle[styleChar[char]] = true;
-	return "<" + tagName + ">";
-} 
-
-/**
- * Protected access to `specialChar`.
- * @param {string} char 
- * @returns {string} `specialChars[char]` if `char` is in `specialChars` else `char`.
- */
-function correspondingSpecialChar(char) {
-	if(char in specialChars)
-		return specialChars[char];
-	return char;
-}
-
-/**
- * Parse text from `text[pos]`.
- * @param {string} text The complete text passed from the user
- * @param {Number} pos Where to begin parsing
- * @returns {[string, Number, boolean]} An array containing the parsing result, the end position of the parsing function and if the function found a new paragraph.
- */
-function parseRegularText(text, pos) {
-	let res = '';
-	let currentChar = text[pos];
-
-	let spaces = 0;
-	while(currentChar == ' ' && pos < text.length) {
-		spaces++;
-		currentChar = text[++pos];
-	}
-	
-	if(spaces > 1 && currentChar == '\n'){
-		res += "<br />\n";
-		return [res, pos, false];
-	}
-	if(spaces > 0) {
-		res += ' '.repeat(spaces);	//insert spaces
-		pos--;
-		return [res, pos, false];
+	/**
+	 * Safe access to `#specialChar`.
+	 * @param {string} char 
+	 * @returns {string} `#specialChars[char]` if `char` is in `specialChars` else `char`.
+	 */
+	static correspondingSpecialChar(char) {
+		if(char in MarkdownParser.#specialChars)
+			return MarkdownParser.#specialChars[char];
+		return char;
 	}
 
-	let newLines = 0;
-	while(currentChar == '\n' && pos < text.length) {
-		newLines++;
-		currentChar = text[++pos];
+	/**
+	 * Parse regular text (not including styles) from the iterator location.
+	 * @returns {boolean} Return if the function found a new paragraph.
+	 */
+	parseRegularText(/*void*/) {
+		let spaces = 0;
+		while(this.#currentChar == ' ' && !this.isAtEndOfText()) {
+			spaces++;
+			this.#skip();
+		}
+		
+		if(spaces > 1 && this.#currentChar == '\n'){
+			this.#result += "<br />\n";
+			return false;
+		}
+		if(spaces > 0) {
+			this.#result += ' '.repeat(spaces);	//insert spaces
+			this.#goBack();
+			return false;
+		}
+
+		let newLines = 0;
+		while(this.#currentChar == '\n' && !this.isAtEndOfText()) {
+			newLines++;
+			this.#skip();
+		}
+		if(newLines > 0) {	//if new line, getting ready for a new marker
+			this.#goBack();
+			return newLines > 1;
+		}
+
+		//If not at EoF
+		if (!this.isAtEndOfText())
+			this.#result += this.#currentChar;
+		return false;
 	}
-	if(newLines > 0) {	//if new line, getting ready for a new marker
-		pos--;	//cancel the continue's effect 
-		if(newLines > 1)		//new paragraph
-			return [res, pos, true];
 
-		return [res, pos, false];
-	}
+	/**
+	 * Parse titles from the iterator's position.
+	 */
+	parseTitles(/*void*/) {
+		let posCopy = this.#position;
+		let headingDepth = 1;
 
-	//If not at EoF
-	if (currentChar)
-		res += currentChar;
-	return [res, pos, false];
-}
+		while(this.#toParse[posCopy] == '#') {
+			headingDepth++;
+			posCopy++;
+		}
 
-/**
- * Parse titles from `text[pos]`.
- * @param {string} text The complete text passed from the user
- * @param {Number} pos Where to begin parsing
- * @returns {[string, Number]} An array containing the parsing result and the end position of the parsing function.
- */
-function parseTitles(text, pos) {
-	let posCopy = pos;
-	let headingDepth = 1;
-	let res = '';
+		if(headingDepth > 6) {	//there is no <h7>
+			headingDepth = 6;
+			console.warn(`There is more than 6 \`#\` for a heading, outputting an <h6>`)
+		}
 
-	while(text[++posCopy] == '#')
-		headingDepth++;
+		if(this.#toParse[posCopy] != ' ')	//if not a space, the # will be handled as \# by another function.
+			return;
 
-	if(headingDepth > 6) {	//there is no <h7>
-		headingDepth = 6;
-		console.warn(`There is more than 6 \`#\` for a heading, outputting an <h6>`)
-	}
-	headingDepth = Math.min(headingDepth, 6);		
-
-	res += `<h${headingDepth}>`;
-	if(text[posCopy] == ' ') {	//if not a space, the # will be handled as \#
-		pos = posCopy;
-		while(text[++pos] != '\n' && pos < text.length) {
-			currentChar = text[pos];
-			nextChar	= text[pos+1];
-
+		this.#result += `<h${headingDepth}>`;
+		this.#skipTo(posCopy);
+		while(this.#skip() != '\n' && !this.isAtEndOfText()) {
 			//checking for tags
-			if(nextChar == '<' || nextChar == '>') {
-				if(currentChar != '\\')		//check if a '<' or '>' is not escaped
+			if(this.#nextChar == '<' || this.#nextChar == '>') {
+				if(this.#currentChar != '\\')		//check if a '<' or '>' is not escaped
 					throw new Error(`Unsecaped \`${nextChar}\` in heading, HTML is disabled in headings.`);
 
-				currentChar = text[++pos];
-				if(currentChar == '<') {
-					res += specialChars['<'];
+				this.#skip();
+				if(this.#currentChar == '<') {
+					this.#result += MarkdownParser.#specialChars['<'];
 					continue;
 				}
-				//else currentChar == '>'
-				res += specialChars['>'];
+				//else #currentChar == '>'
+				this.#result += MarkdownParser.#specialChars['>'];
 				continue;
 			}
 
 			//asterix bold
-			if(currentChar == '*' && nextChar == '*') {
-				res += correspondingStyleTag('**');
-				pos++;	//skipping the second *
+			if(this.#currentChar == '*' && this.#nextChar == '*') {
+				this.#result += this.correspondingStyleTag('**');
+				this.#skip();	//skipping the second *
 				continue;
 			}
 
 			//asterix italic
-			if(currentChar == '*') {
-				res += correspondingStyleTag('*');
+			if(this.#currentChar == '*') {
+				this.#result += this.correspondingStyleTag('*');
 				continue;
 			}
 
-			res += correspondingSpecialChar(currentChar);
+			this.#result += MarkdownParser.correspondingSpecialChar(this.#currentChar);
 		}
-		res += `</h${headingDepth}>\n`;
-	}
-	return [res, pos];
-}
-
-/**
- * Return a string closing `howMany` blockquotes.
- * @param {Number} howMany How many blockquotes should the function close
- * @returns {string} 
- */
-function closeBlockQuotes(howMany) {
-	return "</blockquote>\n".repeat(howMany);
-}
-
-/**
- * Parse one line of a blockquote.
- * @param {string} text The complete text passed from the user
- * @param {Number} pos Where to begin parsing
- * @param {Number} quotingDepth The current nesting depth of quoting blocks. 
- * @returns {[string, Number, Number]} An array containing the parsing result, the end position of the parsing function and the new quoting depth in this order.
- */
-function parseBlockQuotes(text, pos, quotingDepth) {
-	let depth = 0;
-	let res = '';
-	while(text[pos] == '>') {
-		depth++;
-		pos++;
+		this.#result += `</h${headingDepth}>\n`;
 	}
 
-	if(depth == 0 || text[pos] != ' ') {
-		res += closeBlockQuotes(quotingDepth);
-		console.warn("Blockquotes ended because a line didn't have a space after `>` characters.");
-		
-		res += specialChars['>'].repeat(depth);
-		return [res, pos-1, 0];	//cancelling the continue's effect
-	}
-	if(depth > quotingDepth+1)
-		throw new Error(`Can't quote at a nesting level of ${depth} when the previous line's nesting level was ${quotingDepth}.`);
-
-	if(depth == quotingDepth+1) {
-		res += "<blockquote>";
-		quotingDepth++;
-		return [res, pos, quotingDepth];
-	}
-	if(depth < quotingDepth) {
-		res += closeBlockQuotes(quotingDepth - depth);
-		quotingDepth = depth;
+	/**
+	 * Close `howMany` blockquotes.
+	 * @param {Number} howMany How many blockquotes should the function close
+	 * @returns {string}
+	 */
+	#closeBlockQuotes(howMany) {
+		this.#result += "</blockquote>\n".repeat(howMany);
 	}
 
-	res += "<br />\n";
-	return [res, pos, quotingDepth]
-}
+	/**
+	 * Parse the begining of one line of a blockquote.
+	 * @param {Number} quotingDepth The current nesting depth of quoting blocks. 
+	 * @returns {Number} Return the new quoting depth.
+	 */
+	parseBlockQuotes(quotingDepth) {
+		if(this.#currentChar != '>') {
+			this.#closeBlockQuotes(quotingDepth);
+			console.info("Blockquote ended.");
+			return 0;
+		}
 
-/**
- * Parse styles:
- * + italic
- * + bold
- * @param {string} text The complete text passed from the user
- * @param {Number} pos Where to begin parsing
- * @returns {[string, Number, boolean]} Return an array which contains: the parsing result, the end position of the parsing function and a boolean indicating the success of the function in finding a style to apply (whether or not the loop should use `continue`).
- */
-function parseStyle(text, pos) {
-	//asterix bold
-	if(text[pos] == '*' && text[pos+1] == '*') 
-		return [correspondingStyleTag('**'), pos+1, true];		//skipping the second *
+		let depth = 0;
+		while(this.#currentChar == '>') {
+			depth++;
+			this.#skip();
+		}
 
-	//asterix italic
-	if(text[pos] == '*') 
-		return [correspondingStyleTag('*'), pos, true];
+		if(this.#currentChar != ' ') {
+			this.#closeBlockQuotes(quotingDepth);
+			console.warn("Blockquotes ended because a line didn't have a space after `>` characters.");
+			
+			this.#result += MarkdownParser.#specialChars['>'].repeat(depth);
+			return 0;
+		}
 
-	return ['', pos, false];	//no style
-}
+		if(depth > quotingDepth+1)
+			throw new Error(`Can't quote at a nesting level of ${depth} when the previous line's nesting level was ${quotingDepth}.`);
 
-/**
- * Check if a marker is at `text[pos]`.
- * @param {string} text The complete text passed from the user
- * @param {Number} pos Where to begin checking
- * @returns {[boolean, Number]} Return the result of the text and the position of the character after the marker.
- */
-function checkOrderedList(text, pos) {
-	if(!/\d/.test(text[pos])) 
-		return [false, pos];
+		if(depth == quotingDepth+1) {
+			this.#result += "<blockquote>";
+			return quotingDepth+1;
+		}
+		if(depth < quotingDepth) {
+			this.#closeBlockQuotes(quotingDepth - depth);
+			quotingDepth = depth;
+		}
 
-	while(/\d/.test(text[pos]))		//skipping all nums
-		pos++;
-	return [text[pos] == '.', pos+1];
-}
-
-/**
- * Parse ordered lists.
- * @param {string} text The complete text passed from the user
- * @param {Number} pos Where to begin parsing
- * @param {Number} nestlvl=0 | The nesting level of the list
- * @returns {[string, Number]} An array containing the parsing result, the end position of the parsing function.
- */
-function parseOrderedList(text, pos, nestLvl=0, quoteNestLvl=0) {
-	{
-		let posCopy = pos;
-		//NOT checking indentation, the expected `text[pos]` is expected to be the marker
-
-		let isMarker;
-		[isMarker, posCopy] = checkOrderedList(text, posCopy);
-		if(!isMarker)
-			return ['', pos];
-
-		pos = posCopy;
+		//else depth == quotingDepth
+		this.#result += "<br />\n";
+		return quotingDepth
 	}
 
-	let res = "<ol>\n<li>";
-	for(; text[pos] !== undefined; pos++) {
-		let currentChar		= text[pos];
-		let nextChar		= text[pos+1] ?? null;
-		let previousChar	= text[pos-1] ?? null;
-
-		const isFirstChar = previousChar == '\n'; 
-		if(isFirstChar) {
-			//check for quoting blocks
-			if(currentChar == '>') {
-				let parseRes, quoteNest;
-				[parseRes, pos, quoteNest] = parseBlockQuotes(text, pos, quoteNestLvl);
-				if(quoteNest < quoteNestLvl)
-					throw new Error("Quoting level inferior compared to the one at the start of the list.");
-
-				res += parseRes;
+	/**
+	 * Parse styles from the iterator position:
+	 * + italic
+	 * + bold
+	 * @returns {boolean} Return a boolean indicating the success of the function in finding a style to apply (whether or not the user should use `continue`).
+	 */
+	parseStyle(/*void*/) {
+		//asterix bold
+		if(this.#currentChar == '*' ) {
+			if(this.#nextChar == '*') {
+				this.#result += this.correspondingStyleTag('**');
+				this.#skip();		//skipping the second *
+			} else {
+				this.#result += this.correspondingStyleTag('*');		//asterix italic
 			}
-			else if(quoteNestLvl > 0)
-				throw new Error("Began the list with a quoting block but found a line without `>`.");
 
-			//parse ordered lists
-			let nestCount, newPos;
-			[nestCount, newPos] = countIndentation(text, pos);
+			return true;
+		}
 
-			if(nestCount < nestLvl)
-				break;
+		return false;	//no style
+	}
 
-			pos = newPos;
-			if(nestCount == nestLvl) {
-				//checking if this is the end of the list
-				const [hereWeGoAgain, newPos] = checkOrderedList(text, pos);
-				if(!hereWeGoAgain) 
+	/**
+	 * Check if a marker is at the iterator position, does NOT change the iterator position if returned false.
+	 * @returns {boolean} Return the result of the text.
+	 */
+	#checkOrderedList(/*void*/) {
+		if(!/\d/.test(this.#currentChar)) 
+			return false;
+
+		let newPos = this.#position;
+		while(/\d/.test(this.#toParse[newPos]))		//skipping all nums
+			newPos++;
+
+		if(this.#toParse[newPos] == '.') {
+			this.#skipTo(newPos+1);
+			return true;
+		}
+		return false;
+	}
+
+	/**
+	 * Parse ordered lists.
+	 * @param {Number} nestlvl=0 | The nesting level of the list
+	 * @param {Number} quoteNestLvl=0 | The nesting level of the quote block.
+	 */
+	parseOrderedList(nestLvl=0, quoteNestLvl=0) {
+		if(!this.#checkOrderedList())
+			return;
+
+		this.#result += "<ol>\n<li>";
+		for(; !this.isAtEndOfText(); this.#skip()) {
+			const isFirstChar = this.#previousChar == '\n'; 
+			if(isFirstChar) {
+				//check for quoting blocks
+				if(this.#currentChar == '>' && this.parseBlockQuotes(quoteNestLvl) < quoteNestLvl) 
+					throw new Error("Quoting level inferior compared to the one at the start of the list.");
+				else if(quoteNestLvl > 0)
+					throw new Error("Began the list with a quoting block but found a line without `>`.");
+
+				//parse ordered lists
+				const nestCount = this.#countIndentation();
+				if(nestCount < nestLvl)
 					break;
 
+				if(nestCount == nestLvl) {
+					//checking if this is the end of the list
+					if(!this.#checkOrderedList()) 
+						break;
 
-				pos = newPos;
-				res += "</li>\n<li>";
+					this.#result += "</li>\n<li>";
+					continue;
+				}
+				if(nestCount != nestLvl +1)
+					throw new Error(`Can't nest ordered list to level ${nestCount} when the current nesting level is ${nestLvl}.`);
+
+				if(!this.#checkOrderedList()) 
+					throw new Error("Unexpected indentation in ordered list.");
+
+				parseOrderedList(nestLvl+1, quoteNestLvl);
 				continue;
 			}
-			if(nestCount != nestLvl +1)
-				throw new Error(`Can't nest ordered list to level ${nestCount} when the current nesting level is ${nestLvl}.`);
 
-			const testResult = checkOrderedList(text, pos)[0];
-			if(!testResult) 
-				throw new Error("Unexpected indentation in ordered list.");
+			if(this.#currentChar == '\\') {
+				if(!this.#nextChar) {
+					this.#result += '\\';
+					break;
+				}
+				
+				this.#result += MarkdownParser.correspondingSpecialChar(this.#nextChar);
+				this.#skip();
+				continue;
+			}
 
-			let parseRes;
-			[parseRes, pos] = parseOrderedList(text, pos, nestLvl+1, quoteNestLvl);
-			res += parseRes;
-			continue;
+			if(this.#currentChar == '<' || this.#currentChar == '>')	//escaped < and > are handled above
+				throw new Error("Can't insert HTML into lists, try to escape `<` and `>`.");
+
+			//parse style
+			if(this.parseStyle())
+				continue;
+
+
+			//else it's regular text
+			if(this.parseRegularText())
+				break;
 		}
 
-		currentChar = text[pos];
-		if(currentChar == '\\') {
-			if(!nextChar) {
-				res += '\\';
-				break;
+		this.#result += "</li></ol>\n";
+		this.#goBack();	//prevent skipping the next character
+	}
+
+	/**
+	 * Convert markdown to HTML
+	 */
+	parseToHTML(text) {
+		this.#toParse = text;
+		this.#updateChars();
+		this.#result = '';
+
+		var openedTxtArea = 0;
+		var quotingDepth = 0;
+		var quoted = false;
+
+		for (; !this.isAtEndOfText(); this.#skip()) {
+			const isFirstChar = this.#previousChar == '\n' || this.#position == 0 || quoted;	//if #currentChar is the first character of the line
+
+			//handling escapes
+			if(this.#currentChar == '\\') {
+				if(!this.#nextChar) {
+					this.#result += '\\';
+					break;
+				}
+
+				this.#result += MarkdownParser.correspondingSpecialChar(this.#skip());
+				continue;
 			}
 			
-			res += correspondingSpecialChar(nextChar);
-			pos++;
-			continue;
-		}
-
-		if(currentChar == '<' || currentChar == '>')	//escaped < and > are handled above
-			throw new Error("Can't insert HTML into lists, try to escape `<` and `>`.");
-
-		//parse style
-		{
-			let parseRes, callContinue;
-			[parseRes, pos, callContinue] = parseStyle(text, pos);
-			res += parseRes;
-			if(callContinue)
+			//blockquotes
+			if(isFirstChar && this.#currentChar == '>') {
+				quotingDepth = this.parseBlockQuotes(quotingDepth);
+			
+				quoted = true;	//The next character will be considered as the first
 				continue;
-		}
-
-
-		//else it's regular text
-		let parseRes, endList;
-		[parseRes, i, endList] = parseRegularText(text, pos);
-
-		res += parseRes;
-		if(endList)
-			break;
-	}
-
-	res += "</li></ol>\n";
-	return [res, pos-1];	//prevent skipping the next character
-}
-
-/**
- * Convert markdown to HTML
- * @param {string} text The text to convert to HTML
- */
-function markdownToHMTL(text) {
-	var res = '';
-	var openedTxtArea = 0;
-	var quotingDepth = 0;
-	var quoted = false;
-
-	for (let i = 0; i < text.length; i++) {
-		i = parseInt(i);	//I love JS
-
-		let previousChar = text[i-1] ?? null; 
-		let nextChar	 = text[i+1] ?? null; 
-		let currentChar	 = text[i];
-
-		const isFirstChar = previousChar == '\n' || i == 0 || quoted;	//if currentChar is the first character of the line
-
-		//handling escapes
-		if(currentChar == '\\') {
-			if(!nextChar) {
-				res += '\\';
-				break;
 			}
-
-			res += correspondingSpecialChar(nextChar);
-			i++
-			continue;
-		}
-		
-		//blockquotes
-		if(isFirstChar && currentChar == '>') {
-			let parseRes = '';
-			[parseRes, i, quotingDepth] = parseBlockQuotes(text, i, quotingDepth);
-			res += parseRes;
-		
-			quoted = true;	//The next character will be considered as the first
-			continue;
-		}
-		if(isFirstChar && !quoted && quotingDepth > 0) {	//=> currentChar != '>'
-			res += closeBlockQuotes(quotingDepth);
-			quotingDepth = 0;
-			console.info("Setting blockquote nesting level to 0");
-		}
-		quoted = false; //resetting quoted so `isFirstChar` isn't always true
-
-		//preventing XSS injections (The user can output HTML but only in <output>)
-		if(currentChar == '<') {
-			const sliced = text.slice(i, i+9+1);
-			if(sliced.slice(0, -2) == "<output>") {
-				openedTxtArea++;
-				res += "<output>";
-				
-				i += 7;	 //skipping the <output>
-				continue; 
+			if(isFirstChar && !quoted && quotingDepth > 0) {	//=> #currentChar != '>'
+				this.#closeBlockQuotes(quotingDepth);
+				quotingDepth = 0;
+				console.info("Setting blockquote nesting level to 0");
 			}
-			if (sliced == "</output>") {
-				if(openedTxtArea <= 0) {
-					throw new Error("Trying to close the <output> element without any opened.");
+			quoted = false; //resetting quoted so `isFirstChar` isn't always true
+
+			//preventing XSS injections (The user can output HTML but only in <output>)
+			if(this.#currentChar == '<') {
+				const sliced = this.#toParse.slice(this.#position, this.#position+10);
+				if(sliced.slice(0, -2) == "<output>") {
+					openedTxtArea++;
+					this.#result += "<output>";
+					
+					this.#skip(7);	 //skipping the <output>
+					continue; 
 				}
-				openedTxtArea--;
-				res += "</output>";
+				if (sliced == "</output>") {
+					if(openedTxtArea <= 0) 
+						throw new Error("Trying to close the <output> element without any opened.");
+					openedTxtArea--;
+					this.#result += "</output>";
 
-				i += 8;
+					this.#skip(8);
+					continue;
+				}
+			}
+
+			//titles
+			if(isFirstChar && this.#currentChar == '#') {
+				this.parseTitles();
 				continue;
 			}
-		}
 
-		//titles
-		if(isFirstChar && currentChar == '#') {
-			let parseRes;
-			[parseRes, i] = parseTitles(text, i);
-			res += parseRes;
-			continue;
-		}
-
-		//ordered lists
-		if(isFirstChar) {
-			const testRes = checkOrderedList(text, i)[0];
-			if(testRes) {
-				let parseRes;
-				[parseRes, i, listLastIndex] = parseOrderedList(text, i, 0, quotingDepth);
-
-				res += parseRes;
-				continue;
+			//ordered lists
+			if(isFirstChar) {
+				if(this.#checkOrderedList()) {
+					this.parseOrderedList(0, quotingDepth);
+					continue;
+				}
 			}
-		}
-		
-		//style
-		{
-			let parseRes, callContinue;
-			[parseRes, i, callContinue] = parseStyle(text, i);
-			res += parseRes;
-			if(callContinue)
+			
+			//style
+			if(this.parseStyle())
 				continue;
-		}	
 
-		//else it's regular text
-		let parseRes, newParagraph;
-		[parseRes, i, newParagraph] = parseRegularText(text, i);
-		
-		res += parseRes;
-		if(newParagraph)
-			res += "<br />\n<br />"
+			//else it's regular text
+			if(this.parseRegularText())
+				this.#result += "<br />\n<br />"
+		}
+
+		this.#closeBlockQuotes(quotingDepth);
+		return this.#result;
 	}
-
-	res += closeBlockQuotes(quotingDepth);
-	return res;
 }

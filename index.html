@@ -31,12 +31,14 @@
 		<input type="file" id="getFile" accept=".md,.txt,.html" />
 		<textarea id="input"></textarea>
 		<output></output>
+
 		<script src="main.js"></script>
 		<script>
 			const input = document.querySelector('#input');
 			input.addEventListener("input",
 				() => {
-					const res = markdownToHMTL(input.value);
+					const res = (new MarkdownParser()).parseToHTML(input.value);
+
 					document.querySelector('output').innerHTML = res;
 					console.log(res);
 				}
