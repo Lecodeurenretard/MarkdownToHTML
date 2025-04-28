@@ -41,9 +41,7 @@ class MarkdownParser {
 	 */
 	#openedOutputTag = 0;
 
-	constructor() {}
-
-	static #specialChars = {
+	static specialChars = {
 		'<': '&lt;',
 		'>': '&gt;',
 		'#': '&#35;',
@@ -67,6 +65,62 @@ class MarkdownParser {
 	}
 
 	/**
+	 * @typedef {Number} ListEnum A member of the enum `ListEnum`.
+	 */
+	/**
+	 * An enum (object) containing all type of lists.
+	 * @type {Object}
+	 */
+	static ListEnum = Object.freeze({
+		notAList: -1,	//-1 put it last in alphabetical order
+		ordered: 1,
+		unordered: 2
+	});
+
+	/**
+	 * Contain tags of all list types.
+	 * @type {Object}
+	 */
+	static listTag = {};	//initialized in constructor
+
+	/**
+	 * Contains callbacks for all lists, none of them change the iterator's position except if they succeed.
+	 * @type {Object}
+	 */
+	listCheckCallback = {};	//initialized in constructor
+	
+
+	static initialized = false;
+	/**
+	 * Initialize static members.
+	 */
+	static initStatic() {
+		if(this.initialized)
+			return;
+
+		MarkdownParser.listTag[MarkdownParser.ListEnum.notAList]	= undefined;
+		MarkdownParser.listTag[MarkdownParser.ListEnum.ordered]		= "ol";
+		MarkdownParser.listTag[MarkdownParser.ListEnum.unordered]	= "ul";
+		
+		MarkdownParser.listTag = Object.freeze(MarkdownParser.listTag);
+		this.initialized = true;
+	}
+
+	constructor() {
+		this.listCheckCallback[MarkdownParser.ListEnum.notAList]	= () => true;
+		this.listCheckCallback[MarkdownParser.ListEnum.ordered]		= () => this.#checkOrderedList();
+		this.listCheckCallback[MarkdownParser.ListEnum.unordered]	= () => {
+			if(this.#currentChar == '-' && this.#nextChar == ' ') {
+				this.#skip();
+				return true;
+			}
+			return false;
+		};
+
+		this.listCallback = Object.freeze(this.listCheckCallback);
+	}
+
+	/**
 	 * Check if `#position` is out of bounds for `#toParse`.
 	 * @returns {boolean}
 	 */
@@ -85,7 +139,7 @@ class MarkdownParser {
 
 	/**
 	 * Move `howMuch` chars in `#toParse`, call `#updateChars()`.
-	 * @param {Number} howMuch A positive integer.
+	 * @param {Number} [howMuch=1] A positive integer.
 	 * @returns {string} The new `#currentChar`.
 	 */
 	#skip(howMuch=1) {
@@ -117,7 +171,7 @@ class MarkdownParser {
 
 	/**
 	 * Count the indentation there is from the iterator location. Change `#position`.
-	 * @param {Number} spacesInTabs=4 | How many spaces are equivalent to a tab (one of indentation).
+	 * @param {Number} [spacesInTabs=4] How many spaces are equivalent to a tab (one of indentation).
 	 * @returns {Number} Return the indentation level.
 	 */
 	#countIndentation(spacesInTabs=4) {
@@ -159,8 +213,8 @@ class MarkdownParser {
 	 * @returns {string} `#specialChars[char]` if `char` is in `specialChars` else `char`.
 	 */
 	static correspondingSpecialChar(char) {
-		if(char in MarkdownParser.#specialChars)
-			return MarkdownParser.#specialChars[char];
+		if(char in MarkdownParser.specialChars)
+			return MarkdownParser.specialChars[char];
 		return char;
 	}
 
@@ -229,11 +283,11 @@ class MarkdownParser {
 
 				this.#skip();
 				if(this.#currentChar == '<') {
-					this.#result += MarkdownParser.#specialChars['<'];
+					this.#result += MarkdownParser.specialChars['<'];
 					continue;
 				}
 				//else #currentChar == '>'
-				this.#result += MarkdownParser.#specialChars['>'];
+				this.#result += MarkdownParser.specialChars['>'];
 				continue;
 			}
 
@@ -271,8 +325,10 @@ class MarkdownParser {
 	 */
 	#parseBlockQuotes(quotingDepth) {
 		if(this.#currentChar != '>') {
-			this.#closeBlockQuotes(quotingDepth);
-			console.info("Blockquote ended.");
+			if(quotingDepth != 0) {
+				this.#closeBlockQuotes(quotingDepth);
+				console.info("Blockquote ended.");
+			}
 			return 0;
 		}
 
@@ -286,7 +342,7 @@ class MarkdownParser {
 			this.#closeBlockQuotes(quotingDepth);
 			console.warn("Blockquotes ended because a line didn't have a space after `>` characters.");
 			
-			this.#result += MarkdownParser.#specialChars['>'].repeat(depth);
+			this.#result += MarkdownParser.specialChars['>'].repeat(depth);
 			return 0;
 		}
 
@@ -294,6 +350,7 @@ class MarkdownParser {
 			throw new Error(`Can't quote at a nesting level of ${depth} when the previous line's nesting level was ${quotingDepth}.`);
 
 		if(depth == quotingDepth+1) {
+			console.debug("ayo");
 			this.#result += "<blockquote>";
 			return quotingDepth+1;
 		}
@@ -330,7 +387,7 @@ class MarkdownParser {
 	}
 
 	/**
-	 * Check if a marker is at the iterator position, does NOT change the iterator position if returned false.
+	 * Check if a marker is at the iterator position, does NOT change the iterator's position if returned false.
 	 * @returns {boolean} Return the result of the text.
 	 */
 	#checkOrderedList(/*void*/) {
@@ -348,20 +405,49 @@ class MarkdownParser {
 	}
 
 	/**
-	 * Parse ordered lists.
-	 * @param {Number} nestlvl=0 | The nesting level of the list
-	 * @param {Number} quoteNestLvl=0 | The nesting level of the quote block.
-	 * @returns {Number} The new quoting depth.
+	 * Detect which type of list is located at `#currentChar`, return `this.listCallback.notAList` if found none.
+	 * @returns {ListEnum}
 	 */
-	#parseOrderedList(nestLvl=0, quoteNestLvl=0) {
-		this.#result += "<ol>\n<li>";
-		for(; !this.isAtEndOfText(); this.#skip()) {
-			const isFirstChar = this.#previousChar == '\n'; 
-			if(isFirstChar) {
+	#detectList(/*void*/) {
+		for (const i in this.listCheckCallback) {
+			if(this.listCheckCallback[i]())
+				return i;
+		}
+		return this.listCheckCallback.notAList;
+	}
+
+	/**
+	 * Parse lists.
+	 * @param {ListEnum} listType The HTML tag of the list, ex: `"ul"` for unordered lists.
+	 * @param {Number} [nestlvl=0] The nesting level of the list
+	 * @param {Number} [quoteNestLvl=0] The nesting level of the quote block.
+	 * @returns {[Number, boolean]} Return a list containing he new quoting depth and if a <blockquote should be placed>.
+	 */
+	#parseList(listType, nestLvl=0, quoteNestLvl=0) {
+		if(listType == MarkdownParser.ListEnum.notAList)
+			return;
+
+		if(nestLvl > 127)
+			throw new Error("You can't nest more than 127 lists.");
+
+		const tag = MarkdownParser.listTag[listType];
+		this.#result += `<${tag}>\n<li>`;
+
+		let firstIteration = true;
+		let placeBlockQuote = false;
+		for(; !this.isAtEndOfText(); this.#skip(), firstIteration = false) {
+			if(this.#previousChar == '\n' && !firstIteration) {		//isFirstChar
 				//check for quoting blocks
-				console.debug(`${quoteNestLvl}, ${this.#currentChar}`);
-				if(this.#currentChar == '>' && this.#parseBlockQuotes(quoteNestLvl) < quoteNestLvl) 
-					throw new Error("Quoting level inferior compared to the one at the start of the list.");
+				{
+					const newQuoteNestLvl = this.#parseBlockQuotes(quoteNestLvl);
+					console.debug(newQuoteNestLvl);
+					if(this.#currentChar == '>' && newQuoteNestLvl < quoteNestLvl) 
+						throw new Error("Quoting level inferior compared to the one at the start of the list.");
+
+					quoteNestLvl = newQuoteNestLvl;
+					if(newQuoteNestLvl > quoteNestLvl)
+						placeBlockQuote = true;
+				}
 
 				//parse ordered lists
 				const nestCount = this.#countIndentation();
@@ -370,19 +456,22 @@ class MarkdownParser {
 
 				if(nestCount == nestLvl) {
 					//checking if this is the end of the list
-					if(!this.#checkOrderedList()) 
+					if(!this.listCheckCallback[listType]()) 
 						break;
-
+					
 					this.#result += "</li>\n<li>";
 					continue;
 				}
+
+				placeBlockQuote = false;
 				if(nestCount != nestLvl +1)
 					throw new Error(`Can't nest ordered list to level ${nestCount} when the current nesting level is ${nestLvl}.`);
 
-				if(!this.#checkOrderedList()) 
-					throw new Error("Unexpected indentation in ordered list.");
+				const detetedList = this.#detectList();
+				if(detetedList === MarkdownParser.ListEnum.notAList)
+					throw new Error("Unexpected indentation in list.");
 
-				quoteNestLvl = this.#parseOrderedList(nestLvl+1, quoteNestLvl);
+				quoteNestLvl = this.#parseList(detetedList, nestLvl+1, quoteNestLvl);
 				continue;
 			}
 
@@ -398,7 +487,7 @@ class MarkdownParser {
 			}
 
 			if(this.#currentChar == '<' || this.#currentChar == '>')	//escaped < and > are handled above
-				throw new Error("Can't insert HTML into lists, try to escape `<` and `>`.");
+				throw new Error("Can't insert HTML into lists, try to escaping `<` and `>`.");
 
 			//parse style
 			if(this.#parseStyle())
@@ -410,9 +499,30 @@ class MarkdownParser {
 				break;
 		}
 
-		this.#result += "</li></ol>\n";
-		this.#goBack();	//prevent skipping the next character
-		return quoteNestLvl;
+		this.#result += `</li></${tag}>\n`;
+		if(!this.isAtEndOfText())
+			this.#goBack();		//prevent skipping the first character of the <li>
+		return [quoteNestLvl, placeBlockQuote];
+	}
+
+	/**
+	 * Parse ordered lists.
+	 * @param {Number} [nestlvl=0] The nesting level of the list
+	 * @param {Number} [quoteNestLvl=0] The nesting level of the quote block.
+	 * @returns {Number} The new quoting depth.
+	 */
+	#parseOrderedList(nestLvl=0, quoteNestLvl=0) {
+		return this.#parseList(MarkdownParser.ListEnum.ordered, nestLvl, quoteNestLvl);
+	}
+
+	/**
+	 * Parse unordered lists.
+	 * @param {Number} [nestlvl=0] The nesting level of the list
+	 * @param {Number} [quoteNestLvl=0] The nesting level of the quote block.
+	 * @returns {Number} The new quoting depth.
+	 */
+	#parseUnorderedList(nestLvl=0, quoteNestLvl=0) {
+		return this.#parseList(MarkdownParser.ListEnum.unordered, nestLvl, quoteNestLvl);
 	}
 
 	/**
@@ -490,13 +600,26 @@ class MarkdownParser {
 				continue;
 			}
 			
-			//console.debug(this.#currentChar);
 			//ordered lists
 			if(isFirstChar && this.#checkOrderedList()) {
-				this.#parseOrderedList(0, quotingDepth);
+				let placeBlockQuote;
+				[quotingDepth, placeBlockQuote] = this.#parseOrderedList(0, quotingDepth);
+				
+				if(placeBlockQuote)
+					this.#result += "<blockquote>";
 				continue;
 			}
-			
+
+			//unrdered lists
+			if(this.listCallback[MarkdownParser.ListEnum.unordered]()) {
+				let placeBlockQuote;
+				[quotingDepth, placeBlockQuote] = this.#parseUnorderedList(0, quotingDepth);
+				
+				if(placeBlockQuote)
+					this.#result += "<blockquote>";
+				continue;
+			}
+
 			//style
 			if(this.#parseStyle())
 				continue;

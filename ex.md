@@ -46,6 +46,8 @@ Quoting myself:
 90. **does it for me**
 3. I like to not doing *anything*.
 
+2.Not A list
+
 0. This is a separate list
     1. This is a nested ordered list
     2. To parse it,
@@ -66,3 +68,18 @@ like this
 > 	2. While quoted nesting is still available
 >> 1. Lists can also be quoted
 >> 	2. While quoted nesting is still available
+
+
+- Sometimes **order** don't matter.
+- However *style* is always useful.
+    - Both list types are 
+        - Parsed the same way
+    - Everything you can do with ordered lists can be done with unordered lists
+        1. You can even combine both lists
+            - Alternating
+                2. is not
+                    - That bad
+> - Hey, I'm quoted
+> - Me too
+>> - Quoting a quote
+>> - Just double checking

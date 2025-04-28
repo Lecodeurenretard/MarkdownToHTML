@@ -37,6 +37,7 @@
 			const input = document.querySelector('#input');
 			input.addEventListener("input",
 				() => {
+					MarkdownParser.initStatic();
 					const res = (new MarkdownParser()).parseToHTML(input.value);
 
 					document.querySelector('output').innerHTML = res;

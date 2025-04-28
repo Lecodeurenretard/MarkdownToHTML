@@ -11,11 +11,11 @@ This compiler doesn't even cover all of basic cover, for now it accepts:
 - Quoting blocks
 - character escapess
 - ordered lists
+- unordered lists
 
 ### Planned features
 #### Basic syntax
 Pretty much all of it:
-- unordered lists
 - inline code
 - Horizontal rules
 - links
