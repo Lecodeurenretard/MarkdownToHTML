@@ -35,6 +35,12 @@ class MarkdownParser {
 	 */
 	#previousChar = '';
 
+	/**
+	 * How many output tags were opened.
+	 * @type {Number}
+	 */
+	#openedOutputTag = 0;
+
 	constructor() {}
 
 	static #specialChars = {
@@ -162,7 +168,7 @@ class MarkdownParser {
 	 * Parse regular text (not including styles) from the iterator location.
 	 * @returns {boolean} Return if the function found a new paragraph.
 	 */
-	parseRegularText(/*void*/) {
+	#parseRegularText(/*void*/) {
 		let spaces = 0;
 		while(this.#currentChar == ' ' && !this.isAtEndOfText()) {
 			spaces++;
@@ -198,18 +204,16 @@ class MarkdownParser {
 	/**
 	 * Parse titles from the iterator's position.
 	 */
-	parseTitles(/*void*/) {
+	#parseTitles(/*void*/) {
 		let posCopy = this.#position;
 		let headingDepth = 1;
 
-		while(this.#toParse[posCopy] == '#') {
+		while(this.#toParse[++posCopy] == '#')
 			headingDepth++;
-			posCopy++;
-		}
 
 		if(headingDepth > 6) {	//there is no <h7>
 			headingDepth = 6;
-			console.warn(`There is more than 6 \`#\` for a heading, outputting an <h6>`)
+			console.warn(`There is more than 6 \`#\` for a heading, outputting an <h6>`);
 		}
 
 		if(this.#toParse[posCopy] != ' ')	//if not a space, the # will be handled as \# by another function.
@@ -265,7 +269,7 @@ class MarkdownParser {
 	 * @param {Number} quotingDepth The current nesting depth of quoting blocks. 
 	 * @returns {Number} Return the new quoting depth.
 	 */
-	parseBlockQuotes(quotingDepth) {
+	#parseBlockQuotes(quotingDepth) {
 		if(this.#currentChar != '>') {
 			this.#closeBlockQuotes(quotingDepth);
 			console.info("Blockquote ended.");
@@ -309,7 +313,7 @@ class MarkdownParser {
 	 * + bold
 	 * @returns {boolean} Return a boolean indicating the success of the function in finding a style to apply (whether or not the user should use `continue`).
 	 */
-	parseStyle(/*void*/) {
+	#parseStyle(/*void*/) {
 		//asterix bold
 		if(this.#currentChar == '*' ) {
 			if(this.#nextChar == '*') {
@@ -337,31 +341,27 @@ class MarkdownParser {
 		while(/\d/.test(this.#toParse[newPos]))		//skipping all nums
 			newPos++;
 
-		if(this.#toParse[newPos] == '.') {
-			this.#skipTo(newPos+1);
-			return true;
-		}
-		return false;
+		if(this.#toParse[newPos] != '.')
+			return false;
+		this.#skipTo(newPos+1);
+		return true;
 	}
 
 	/**
 	 * Parse ordered lists.
 	 * @param {Number} nestlvl=0 | The nesting level of the list
 	 * @param {Number} quoteNestLvl=0 | The nesting level of the quote block.
+	 * @returns {Number} The new quoting depth.
 	 */
-	parseOrderedList(nestLvl=0, quoteNestLvl=0) {
-		if(!this.#checkOrderedList())
-			return;
-
+	#parseOrderedList(nestLvl=0, quoteNestLvl=0) {
 		this.#result += "<ol>\n<li>";
 		for(; !this.isAtEndOfText(); this.#skip()) {
 			const isFirstChar = this.#previousChar == '\n'; 
 			if(isFirstChar) {
 				//check for quoting blocks
-				if(this.#currentChar == '>' && this.parseBlockQuotes(quoteNestLvl) < quoteNestLvl) 
+				console.debug(`${quoteNestLvl}, ${this.#currentChar}`);
+				if(this.#currentChar == '>' && this.#parseBlockQuotes(quoteNestLvl) < quoteNestLvl) 
 					throw new Error("Quoting level inferior compared to the one at the start of the list.");
-				else if(quoteNestLvl > 0)
-					throw new Error("Began the list with a quoting block but found a line without `>`.");
 
 				//parse ordered lists
 				const nestCount = this.#countIndentation();
@@ -382,7 +382,7 @@ class MarkdownParser {
 				if(!this.#checkOrderedList()) 
 					throw new Error("Unexpected indentation in ordered list.");
 
-				parseOrderedList(nestLvl+1, quoteNestLvl);
+				quoteNestLvl = this.#parseOrderedList(nestLvl+1, quoteNestLvl);
 				continue;
 			}
 
@@ -401,17 +401,43 @@ class MarkdownParser {
 				throw new Error("Can't insert HTML into lists, try to escape `<` and `>`.");
 
 			//parse style
-			if(this.parseStyle())
+			if(this.#parseStyle())
 				continue;
 
 
 			//else it's regular text
-			if(this.parseRegularText())
+			if(this.#parseRegularText())
 				break;
 		}
 
 		this.#result += "</li></ol>\n";
 		this.#goBack();	//prevent skipping the next character
+		return quoteNestLvl;
+	}
+
+	/**
+	 * Parse an output tag.
+	 * @returns {boolean} If the begining or ending tag of an `<output>` element was found.
+	 */
+	#parseOutputTag(/*void*/) {
+		const sliced = this.#toParse.slice(this.#position, this.#position+10);
+		if(sliced.slice(0, -2) == "<output>") {
+			this.#openedOutputTag++;
+			this.#result += "<output>";
+
+			this.#skip(7);	 //skipping the <output>
+			return true;
+		}
+		if (sliced == "</output>") {
+			if(this.#openedOutputTag <= 0) 
+				throw new Error("Trying to close the <output> element without any opened.");
+			this.#openedOutputTag--;
+			this.#result += "</output>";
+
+			this.#skip(8);
+			return true;
+		}
+		return false;
 	}
 
 	/**
@@ -422,7 +448,6 @@ class MarkdownParser {
 		this.#updateChars();
 		this.#result = '';
 
-		var openedTxtArea = 0;
 		var quotingDepth = 0;
 		var quoted = false;
 
@@ -442,59 +467,42 @@ class MarkdownParser {
 			
 			//blockquotes
 			if(isFirstChar && this.#currentChar == '>') {
-				quotingDepth = this.parseBlockQuotes(quotingDepth);
+				quotingDepth = this.#parseBlockQuotes(quotingDepth);
 			
 				quoted = true;	//The next character will be considered as the first
 				continue;
 			}
 			if(isFirstChar && !quoted && quotingDepth > 0) {	//=> #currentChar != '>'
+				console.info("Setting blockquote nesting level to 0");
 				this.#closeBlockQuotes(quotingDepth);
 				quotingDepth = 0;
-				console.info("Setting blockquote nesting level to 0");
 			}
 			quoted = false; //resetting quoted so `isFirstChar` isn't always true
 
 			//preventing XSS injections (The user can output HTML but only in <output>)
-			if(this.#currentChar == '<') {
-				const sliced = this.#toParse.slice(this.#position, this.#position+10);
-				if(sliced.slice(0, -2) == "<output>") {
-					openedTxtArea++;
-					this.#result += "<output>";
-					
-					this.#skip(7);	 //skipping the <output>
-					continue; 
-				}
-				if (sliced == "</output>") {
-					if(openedTxtArea <= 0) 
-						throw new Error("Trying to close the <output> element without any opened.");
-					openedTxtArea--;
-					this.#result += "</output>";
-
-					this.#skip(8);
+			if(this.#currentChar == '<')
+				if(this.#parseOutputTag())
 					continue;
-				}
-			}
 
 			//titles
 			if(isFirstChar && this.#currentChar == '#') {
-				this.parseTitles();
+				this.#parseTitles();
 				continue;
 			}
-
+			
+			//console.debug(this.#currentChar);
 			//ordered lists
-			if(isFirstChar) {
-				if(this.#checkOrderedList()) {
-					this.parseOrderedList(0, quotingDepth);
-					continue;
-				}
+			if(isFirstChar && this.#checkOrderedList()) {
+				this.#parseOrderedList(0, quotingDepth);
+				continue;
 			}
 			
 			//style
-			if(this.parseStyle())
+			if(this.#parseStyle())
 				continue;
 
 			//else it's regular text
-			if(this.parseRegularText())
+			if(this.#parseRegularText())
 				this.#result += "<br />\n<br />"
 		}
 
