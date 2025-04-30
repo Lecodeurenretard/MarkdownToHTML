@@ -25,6 +25,11 @@
 			output {
 				right: 1%;
 			}
+
+			blockquote {
+				border: 1px dashed rgba(0, 0, 0, 0.3);
+				border-radius: 2%;
+			}
 		</style>
 	</head>
 	<body>
@@ -38,7 +43,10 @@
 			input.addEventListener("input",
 				() => {
 					MarkdownParser.initStatic();
-					const res = (new MarkdownParser()).parseToHTML(input.value);
+
+					const parser = new MarkdownParser();
+					parser.parseToHTML(input.value);
+					const res = parser.clean();
 
 					document.querySelector('output').innerHTML = res;
 					console.log(res);

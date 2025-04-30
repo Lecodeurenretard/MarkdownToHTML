@@ -6,7 +6,7 @@ class MarkdownParser {
 	#result = '';
 
 	/**
-	 * An iterator of `toParse`.
+	 * An iterator of `toParse`. In documentation it is referred as _the iterator_.
 	 * @type {Number}
 	 */
 	#position = 0;
@@ -144,7 +144,7 @@ class MarkdownParser {
 	 */
 	#skip(howMuch=1) {
 		if(howMuch < 0)
-			throw new RangeError("Parameter `howMuch` negative.");
+			throw new RangeError("Parameter `howMuch` is negative.");
 		this.#position += howMuch;
 		this.#updateChars();
 		return this.#currentChar;
@@ -157,7 +157,7 @@ class MarkdownParser {
 	 */
 	#skipTo(index) {
 		if(index < this.#position)
-			throw new RangeError("`index` is before the iterator in `skipTo("+ index.toString() +")`.");
+			throw new RangeError("`index` is before the iterator's position in `skipTo("+ index.toString() +")`.");
 		return this.#skip(index - this.#position);
 	}
 
@@ -350,7 +350,6 @@ class MarkdownParser {
 			throw new Error(`Can't quote at a nesting level of ${depth} when the previous line's nesting level was ${quotingDepth}.`);
 
 		if(depth == quotingDepth+1) {
-			console.debug("ayo");
 			this.#result += "<blockquote>";
 			return quotingDepth+1;
 		}
@@ -421,7 +420,7 @@ class MarkdownParser {
 	 * @param {ListEnum} listType The HTML tag of the list, ex: `"ul"` for unordered lists.
 	 * @param {Number} [nestlvl=0] The nesting level of the list
 	 * @param {Number} [quoteNestLvl=0] The nesting level of the quote block.
-	 * @returns {[Number, boolean]} Return a list containing he new quoting depth and if a <blockquote should be placed>.
+	 * @returns {[Number, boolean]} Return a list containing the new quoting depth and if a \<blockquote\> should be placed.
 	 */
 	#parseList(listType, nestLvl=0, quoteNestLvl=0) {
 		if(listType == MarkdownParser.ListEnum.notAList)
@@ -440,7 +439,6 @@ class MarkdownParser {
 				//check for quoting blocks
 				{
 					const newQuoteNestLvl = this.#parseBlockQuotes(quoteNestLvl);
-					console.debug(newQuoteNestLvl);
 					if(this.#currentChar == '>' && newQuoteNestLvl < quoteNestLvl) 
 						throw new Error("Quoting level inferior compared to the one at the start of the list.");
 
@@ -471,7 +469,10 @@ class MarkdownParser {
 				if(detetedList === MarkdownParser.ListEnum.notAList)
 					throw new Error("Unexpected indentation in list.");
 
-				quoteNestLvl = this.#parseList(detetedList, nestLvl+1, quoteNestLvl);
+				[quoteNestLvl, placeBlockQuote] = this.#parseList(detetedList, nestLvl+1, quoteNestLvl);
+
+				if(placeBlockQuote)
+					res += "<blockquote>";
 				continue;
 			}
 
@@ -630,6 +631,34 @@ class MarkdownParser {
 		}
 
 		this.#closeBlockQuotes(quotingDepth);
+		return this.#result;
+	}
+
+	/**
+	 * Clean HTML.
+	 * @param {string} html The HTML to clean.
+	 * @returns {string}
+	 */
+	static clean(html) {
+		var root = document.createElement("root");
+		root.innerHTML = html;
+
+		let res = '';
+		for(const node in root.children) {
+			if(node.innerHTML != '')
+				res += node.outerHTML;
+		}
+
+		root.remove();
+		return res;
+	}
+
+	/**
+	 * Return a cleaned parsing result by `MarkdownParser.clean()`, update the member `#result`.
+	 * @returns {string}
+	 */
+	clean(/*void*/) {
+		this.#result = MarkdownParser.clean(this.#result);
 		return this.#result;
 	}
 }
